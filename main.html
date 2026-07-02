@@ -687,6 +687,36 @@ body::after {
     </div>
   </div>
 
+  <!-- MANDATORY — a standing checklist that resets each day; the day
+       streak breaks the moment any item is left unchecked. -->
+  <div class="section">
+    <div class="section-title">Mandatory</div>
+    <div class="gm-card" id="gmCardMandatory">
+      <div class="gm-header">
+        <div class="gm-header-left">
+          <div class="gm-eyebrow" id="mandatoryLabel">Mandatory</div>
+          <div class="gm-progress-row">
+            <span class="gm-progress-num"   id="mandatoryProgressNum">0</span>
+            <span class="gm-progress-total" id="mandatoryProgressTotal">/ 0</span>
+            <span class="gm-progress-label" id="mandatoryProgressLabel">no items yet</span>
+          </div>
+        </div>
+        <div class="gm-streak" id="mandatoryStreak">
+          <span class="gm-streak-icon">⚡</span>
+          <span class="gm-streak-num" id="mandatoryStreakNum">0</span>
+          <span>day streak</span>
+        </div>
+      </div>
+      <div class="gm-bar" id="mandatoryBar"></div>
+      <ul id="mandatoryList" class="goal-list gm-list"></ul>
+      <div id="mandatoryEmpty" class="empty-state">Nothing here yet — add a must-do item below.</div>
+      <div class="goal-input-wrap gm-input-wrap">
+        <input id="mandatoryInput" class="gm-input" type="text" placeholder="Add a mandatory item…" autocomplete="off">
+        <button type="button" id="mandatoryAddBtn" class="gm-add">+ Add</button>
+      </div>
+    </div>
+  </div>
+
   <div class="section">
     <div class="section-title">To Do List</div>
 
@@ -737,19 +767,6 @@ body::after {
         <button type="button" id="tomorrowAddBtn"    class="gm-add">+ Add</button>
         <button type="button" id="tomorrowPolishBtn" class="gm-polish">✨ Polish</button>
         <div class="gm-status" id="tomorrowStatus"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MANDATORY — a standing checklist that doesn't reset daily. -->
-  <div class="section">
-    <div class="section-title">Mandatory</div>
-    <div class="gm-card" id="gmCardMandatory">
-      <ul id="mandatoryList" class="goal-list gm-list"></ul>
-      <div id="mandatoryEmpty" class="empty-state">Nothing here yet — add a must-do item below.</div>
-      <div class="goal-input-wrap gm-input-wrap">
-        <input id="mandatoryInput" class="gm-input" type="text" placeholder="Add a mandatory item…" autocomplete="off">
-        <button type="button" id="mandatoryAddBtn" class="gm-add">+ Add</button>
       </div>
     </div>
   </div>
@@ -1398,9 +1415,76 @@ body::after {
     });
   }
 
-  // ---------- Mandatory list + Summer goals (standing lists, no daily reset) ----------
+  // ---------- Mandatory list (daily reset + day streak) + Summer goals ----------
   const MANDATORY_KEY = 'mandatory_list_v1';
+  const MANDATORY_STREAK_KEY = 'mandatory_streak_v1';
   const SUMMER_KEY = 'summer_goals_v1';
+
+  function mandatoryStreakLoad() {
+    const s = storeGet(MANDATORY_STREAK_KEY);
+    if (s && typeof s.count === 'number') return s;
+    return { count: 0, lastResetDate: '' };
+  }
+  function mandatoryStreakSave(s) { storeSet(MANDATORY_STREAK_KEY, s); }
+
+  function daysBetweenDateStr(a, b) {
+    const [ay, am, ad] = a.split('-').map(Number);
+    const [by, bm, bd] = b.split('-').map(Number);
+    const da = new Date(ay, am - 1, ad);
+    const db = new Date(by, bm - 1, bd);
+    return Math.round((db - da) / 86400000);
+  }
+
+  // Grades yesterday's checklist (all done → streak+1, anything left
+  // unchecked → streak resets to 0) then wipes today's checkboxes fresh.
+  // A fully-skipped day (app not opened) also breaks the streak.
+  function mandatoryCheckDailyReset() {
+    const s = mandatoryStreakLoad();
+    const todayDateStr = getActiveDateString();
+    if (s.lastResetDate === todayDateStr) return;
+    const list = getGoals(MANDATORY_KEY);
+    if (s.lastResetDate) {
+      if (list.length > 0 && list.every(it => it.done)) s.count += 1;
+      else s.count = 0;
+      if (daysBetweenDateStr(s.lastResetDate, todayDateStr) > 1) s.count = 0;
+    }
+    setGoals(MANDATORY_KEY, list.map(it => {
+      const fresh = { text: it.text, done: false };
+      if (it.time) fresh.time = it.time;
+      return fresh;
+    }));
+    s.lastResetDate = todayDateStr;
+    mandatoryStreakSave(s);
+  }
+
+  function renderMandatoryStreak() {
+    const s = mandatoryStreakLoad();
+    document.getElementById('mandatoryStreakNum').textContent = s.count;
+    document.getElementById('mandatoryStreak').classList.toggle('gm-streak-active', s.count > 0);
+  }
+
+  function renderMandatoryHeader() {
+    const goals = getGoals(MANDATORY_KEY);
+    const total = goals.length;
+    const done = goals.filter(g => g.done).length;
+    document.getElementById('mandatoryProgressNum').textContent   = done;
+    document.getElementById('mandatoryProgressTotal').textContent = '/ ' + total;
+    const label = document.getElementById('mandatoryProgressLabel');
+    if (total === 0)         label.textContent = 'no items yet';
+    else if (done === total) label.textContent = 'all done — solid day';
+    else                     label.textContent = 'complete';
+
+    const bar = document.getElementById('mandatoryBar');
+    bar.innerHTML = '';
+    goals.forEach(g => {
+      const seg = document.createElement('div');
+      seg.className = 'gm-bar-seg' + (g.done ? ' gm-bar-seg-done' : '');
+      bar.appendChild(seg);
+    });
+
+    document.getElementById('gmCardMandatory').classList.toggle('gm-all-done', total > 0 && done === total);
+    renderMandatoryStreak();
+  }
 
   function loadMandatory() {
     const goals = getGoals(MANDATORY_KEY);
@@ -1409,6 +1493,7 @@ body::after {
     listEl.innerHTML = '';
     emptyEl.style.display = goals.length === 0 ? 'block' : 'none';
     goals.forEach((g, i) => listEl.appendChild(buildGoalRow(g, i, MANDATORY_KEY, false, loadMandatory)));
+    renderMandatoryHeader();
   }
 
   function loadSummer() {
@@ -1459,6 +1544,7 @@ body::after {
   // ---------- Boot ----------
   rollover();
   processStreak();
+  mandatoryCheckDailyReset();
   loadToday();
   loadTomorrow();
   loadMandatory();
@@ -1481,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initCloudSync({
     appKey: 'goals',
     syncedPrefixes: ['goals:'],
-    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1'],
+    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1', 'mandatory_streak_v1'],
     onApplied: function () {
       window.dispatchEvent(new CustomEvent('goals-changed'));
       window.dispatchEvent(new Event('storage'));
