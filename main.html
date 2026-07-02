@@ -1542,8 +1542,12 @@ body::after {
   );
 
   // ---------- Boot ----------
-  rollover();
+  // processStreak must run before rollover: rollover deletes each past
+  // day's 'goals:' entry once it has rolled undone items forward, so
+  // grading a day's completion has to happen first or the evidence is
+  // already gone.
   processStreak();
+  rollover();
   mandatoryCheckDailyReset();
   loadToday();
   loadTomorrow();
@@ -1567,7 +1571,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initCloudSync({
     appKey: 'goals',
     syncedPrefixes: ['goals:'],
-    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1', 'mandatory_streak_v1'],
+    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1', 'mandatory_streak_v1', 'goal_streak_v1'],
     onApplied: function () {
       window.dispatchEvent(new CustomEvent('goals-changed'));
       window.dispatchEvent(new Event('storage'));
