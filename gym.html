@@ -89,6 +89,15 @@ const CONFIG = {
     { name: "Back squat",      gym: "comm", day: "legs", repMin: 5, repMax: 8,  step: 5,   startWeight: 80 },
     { name: "Romanian deadlift", gym: "comm", day: "legs", repMin: 6, repMax: 10, step: 5, startWeight: 60 },
     { name: "Leg press",       gym: "comm", day: "legs", repMin: 8, repMax: 12, step: 5,   startWeight: 100 }
+  ],
+
+  // Cardio goals — plain weekly frequency targets, no weight/rep
+  // progression. Tap a day pill in the app to mark that day done;
+  // `timesPerWeek` is just the label shown ("2/3 this week").
+  // `id` must be a short unique slug.
+  cardio: [
+    { id: "run-mile", name: "Run a mile", timesPerWeek: 3 },
+    { id: "sprints",  name: "Sprints",    timesPerWeek: 2 }
   ]
 };
 </script>
@@ -738,6 +747,45 @@ img, video, canvas, svg { max-width: 100%; }
   .po-shell { padding-left: 8px; padding-right: 8px; }
   .po-title { font-size: 17px; }
   .po-reps-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ----- Cardio (weekly frequency targets, not weight/rep) ----- */
+.cardio-row {
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.cardio-row:last-child { margin-bottom: 0; }
+.cardio-row-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.cardio-name { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.cardio-target { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+.cardio-days { display: flex; gap: 6px; }
+.cardio-day-btn {
+  flex: 1; padding: 8px 0; border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.24);
+  color: var(--text-3);
+  font-family: inherit; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cardio-day-btn:hover { color: var(--text-1); background: rgba(255,255,255,0.05); }
+.cardio-day-btn.is-done {
+  background: rgba(110,231,183,0.16);
+  border-color: rgba(110,231,183,0.35);
+  color: var(--good);
+}
+.cardio-day-btn.is-today { border-color: rgba(255,255,255,0.30); }
+.cardio-day-btn.is-future { opacity: 0.35; cursor: not-allowed; }
+.cardio-empty {
+  text-align: center; padding: 10px 0; font-size: 12px; color: var(--text-3); font-style: italic;
 }
 
 /* Today's Workout + Past Workouts */
@@ -1439,6 +1487,14 @@ img, video, canvas, svg { max-width: 100%; }
     <button class="po-icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
+  </div>
+
+  <!-- CARDIO — weekly frequency targets, separate from the weight/rep
+       lifting log below (remove this card + its CSS/JS if you don't
+       like it; it's fully self-contained). -->
+  <div class="card" id="cardioCard">
+    <div class="po-sub-title">Cardio</div>
+    <div class="cardio-list" id="cardioList"></div>
   </div>
 
   <div class="card">
@@ -2614,6 +2670,109 @@ img, video, canvas, svg { max-width: 100%; }
   }
 
   // ============================================================
+  // CARDIO — plain weekly frequency targets (Run a mile 3x/week,
+  // Sprints 2x/week, ...). Independent of the weight/rep lifting log:
+  // no weight, no progression, just "did I do it this week".
+  // Persisted: po_coach_cardio : { [cardioId]: ['YYYY-MM-DD', ...] }
+  // ============================================================
+  const CARDIO_KEY = 'po_coach_cardio';
+  const CARDIO_TYPES = Array.isArray(CONFIG.cardio) ? CONFIG.cardio : [];
+
+  function cardioLoad() {
+    try {
+      const raw = localStorage.getItem(CARDIO_KEY);
+      const obj = raw ? JSON.parse(raw) : {};
+      return (obj && typeof obj === 'object') ? obj : {};
+    } catch (e) { return {}; }
+  }
+  function cardioSave(obj) {
+    try { localStorage.setItem(CARDIO_KEY, JSON.stringify(obj)); } catch (e) {}
+  }
+  let cardioLogs = cardioLoad();
+
+  function cardioDateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  // Monday-start week containing today.
+  function cardioWeekDates() {
+    const now = new Date();
+    const dow = (now.getDay() + 6) % 7; // 0 = Monday
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - dow);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }
+
+  function cardioToggle(id, dateKey) {
+    const list = cardioLogs[id] || [];
+    const idx = list.indexOf(dateKey);
+    if (idx === -1) list.push(dateKey); else list.splice(idx, 1);
+    cardioLogs[id] = list;
+    cardioSave(cardioLogs);
+    cardioRender();
+  }
+
+  function cardioRender() {
+    const wrap = document.getElementById('cardioList');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (CARDIO_TYPES.length === 0) {
+      wrap.innerHTML = '<div class="cardio-empty">No cardio goals set — add some in CONFIG.cardio.</div>';
+      return;
+    }
+    const weekDays = cardioWeekDates();
+    const todayKey = cardioDateKey(new Date());
+    const dayLetters = ['M','T','W','T','F','S','S'];
+
+    CARDIO_TYPES.forEach(ct => {
+      const list = cardioLogs[ct.id] || [];
+      const doneThisWeek = weekDays.filter(d => list.indexOf(cardioDateKey(d)) !== -1).length;
+
+      const row = document.createElement('div');
+      row.className = 'cardio-row';
+
+      const top = document.createElement('div');
+      top.className = 'cardio-row-top';
+      const name = document.createElement('span');
+      name.className = 'cardio-name';
+      name.textContent = ct.name;
+      const target = document.createElement('span');
+      target.className = 'cardio-target';
+      target.textContent = doneThisWeek + ' / ' + ct.timesPerWeek + ' this week';
+      top.appendChild(name);
+      top.appendChild(target);
+      row.appendChild(top);
+
+      const daysRow = document.createElement('div');
+      daysRow.className = 'cardio-days';
+      weekDays.forEach((d, i) => {
+        const key = cardioDateKey(d);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cardio-day-btn';
+        btn.textContent = dayLetters[i];
+        const isDone = list.indexOf(key) !== -1;
+        const isFuture = key > todayKey;
+        if (isDone) btn.classList.add('is-done');
+        if (key === todayKey) btn.classList.add('is-today');
+        if (isFuture) { btn.classList.add('is-future'); btn.disabled = true; }
+        btn.title = key;
+        btn.addEventListener('click', () => cardioToggle(ct.id, key));
+        daysRow.appendChild(btn);
+      });
+      row.appendChild(daysRow);
+
+      wrap.appendChild(row);
+    });
+  }
+
+  // ============================================================
   // WEIGHT TRACKER + COMPOSITION ESTIMATE + PROGRESS PHOTOS
   // All persisted to localStorage:
   //   po_coach_weights : [{ dateKey:'YYYY-MM-DD', weight:Number }]
@@ -3290,6 +3449,7 @@ img, video, canvas, svg { max-width: 100%; }
   // ============================================================
   renderAll();
   wtRender();
+  cardioRender();
   photosRender();
 
   // ============================================================
@@ -3317,7 +3477,7 @@ img, video, canvas, svg { max-width: 100%; }
   // the wire. The actual JPEG lives in Supabase Storage. pcCollectState
   // strips any base64 dataUrl entries before push so the payload stays
   // tiny and we never blow iOS Safari's ~5MB localStorage quota.
-  const PC_SYNCED_KEYS = ['po_coach_v1', 'po_coach_workout_done', 'po_coach_weights', 'po_coach_photos'];
+  const PC_SYNCED_KEYS = ['po_coach_v1', 'po_coach_workout_done', 'po_coach_weights', 'po_coach_photos', 'po_coach_cardio'];
 
   let pcSupa = null;
   let pcPushTimer = null;
@@ -3378,12 +3538,14 @@ img, video, canvas, svg { max-width: 100%; }
     // in-memory copies from before the remote pull.
     try { state = loadState(); } catch {}
     try { wtEntries = wtLoad(); } catch {}
+    try { cardioLogs = cardioLoad(); } catch {}
     try {
       const raw = localStorage.getItem(PHOTO_KEY);
       photos = raw ? JSON.parse(raw) : [];
     } catch { photos = []; }
     try { renderAll(); } catch {}
     try { wtRender(); } catch {}
+    try { cardioRender(); } catch {}
     try { photosRender(); } catch {}
   }
 
