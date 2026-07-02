@@ -94,16 +94,18 @@ const CONFIG = {
   // Cardio goals — plain weekly frequency targets, no weight/rep
   // progression. Tap a day pill in the app to mark that day done;
   // `timesPerWeek` is just the label shown ("2/3 this week").
-  // Use `minutesPerDay` instead of `timesPerWeek` for a daily (not
-  // weekly) target — every day counts, not just some of them.
+  // `minutesPerSession` (optional) adds a " · 15 min" hint next to
+  // the target label.
+  // `streak: true` shows a 🔥 day-streak badge (consecutive calendar
+  // days logged done, same idea as the weight tracker's streak).
   // `plan` (optional, 7 entries, Mon→Sun) shows as a rotating
   // suggested plan in that day's note placeholder — purely a hint,
   // never saved unless you actually type something.
   // `id` must be a short unique slug.
   cardio: [
     { id: "run-mile", name: "Run a mile", timesPerWeek: 3 },
-    { id: "sprints",  name: "Sprints",    timesPerWeek: 2 },
-    { id: "soccer",   name: "Soccer", minutesPerDay: 15,
+    { id: "sprints",  name: "Sprints",    timesPerWeek: 2, streak: true },
+    { id: "soccer",   name: "Soccer", timesPerWeek: 5, minutesPerSession: 15, streak: true,
       plan: [
         "Dribbling drills — tight touches through cones",
         "Juggling + wall passes, both feet",
@@ -777,7 +779,14 @@ img, video, canvas, svg { max-width: 100%; }
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 10px;
 }
+.cardio-name-wrap { display: flex; align-items: center; gap: 8px; }
 .cardio-name { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.cardio-streak {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700; color: var(--good);
+  background: rgba(110,231,183,0.14);
+  padding: 2px 8px; border-radius: 999px;
+}
 .cardio-target { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
 .cardio-days { display: flex; gap: 6px; }
 .cardio-day-btn {
@@ -2763,6 +2772,22 @@ img, video, canvas, svg { max-width: 100%; }
     cardioRender();
   }
 
+  // Consecutive calendar days logged done, walking back from today (or
+  // yesterday if today isn't logged yet) — same idea as the weight
+  // tracker's streak, not tied to the weekly target.
+  function cardioComputeStreak(id) {
+    let streak = 0;
+    const cursor = new Date();
+    if (!cardioDayRecord(id, cardioDateKey(cursor)).done) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    while (cardioDayRecord(id, cardioDateKey(cursor)).done) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
   function cardioRender() {
     const wrap = document.getElementById('cardioList');
     if (!wrap) return;
@@ -2784,15 +2809,26 @@ img, video, canvas, svg { max-width: 100%; }
 
       const top = document.createElement('div');
       top.className = 'cardio-row-top';
+
+      const nameWrap = document.createElement('span');
+      nameWrap.className = 'cardio-name-wrap';
       const name = document.createElement('span');
       name.className = 'cardio-name';
       name.textContent = ct.name;
+      nameWrap.appendChild(name);
+      if (ct.streak) {
+        const streakEl = document.createElement('span');
+        streakEl.className = 'cardio-streak';
+        streakEl.textContent = '🔥 ' + cardioComputeStreak(ct.id);
+        nameWrap.appendChild(streakEl);
+      }
+      top.appendChild(nameWrap);
+
       const target = document.createElement('span');
       target.className = 'cardio-target';
       target.textContent = ct.timesPerWeek
-        ? (doneThisWeek + ' / ' + ct.timesPerWeek + ' this week')
+        ? (doneThisWeek + ' / ' + ct.timesPerWeek + ' this week' + (ct.minutesPerSession ? ' · ' + ct.minutesPerSession + ' min' : ''))
         : (doneThisWeek + ' / 7 this week · ' + ct.minutesPerDay + ' min/day');
-      top.appendChild(name);
       top.appendChild(target);
       row.appendChild(top);
 
