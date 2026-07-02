@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="lock.js"></script>
+<script src="/api/config"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Food & Calories</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="topbar.js" defer></script>
+
+<!-- =============================================================
+     EDIT THIS BLOCK TO MAKE THE APP YOURS.
+     ============================================================= -->
+<script>
+const CONFIG = {
+  appTitle: "Food & Calories",
+
+  // Daily targets — the summary bars at the top fill up toward these.
+  targets: {
+    calories: 2200,
+    proteinG: 150,
+    carbsG: 220,
+    fatG: 70
+  },
+
+  // Paste an Anthropic API key here to turn on "AI Estimate" (reads
+  // your description and/or photo and fills in calories/macros for
+  // you — review before logging). Leave blank and the button just
+  // reminds you to add a key; manual entry always works either way.
+  // Get a key at https://console.anthropic.com
+  anthropicApiKey: ""
+};
+</script>
+
+<style>
+:root {
+  --bg: #050506;
+  --bg-card: rgba(255, 255, 255, 0.04);
+  --bg-secondary: rgba(255, 255, 255, 0.035);
+  --bg-input: rgba(0, 0, 0, 0.28);
+  --bg-input-focus: rgba(0, 0, 0, 0.36);
+
+  --border: rgba(255, 255, 255, 0.06);
+  --border-soft: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-primary: #FAFAFA;
+  --text-secondary: #B8B6B0;
+  --text-tertiary: #76746E;
+  --text-quaternary: #4D4B47;
+
+  --accent: #6BE3A4;
+  --accent-glow: rgba(107, 227, 164, 0.35);
+  --warn: #FF8A4D;
+  --bad: #FF6B6B;
+
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 15px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body { min-height: 100vh; overflow-x: hidden; }
+main {
+  max-width: 720px; margin: 0 auto;
+  padding: 24px 16px 80px;
+  padding-top: max(24px, env(safe-area-inset-top, 24px));
+}
+
+.sf-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+.sf-title {
+  font-size: 24px; font-weight: 700;
+  letter-spacing: -0.022em;
+  color: var(--text-primary);
+  line-height: 1.15; margin: 0 0 18px;
+}
+
+.food-day-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 16px;
+}
+.food-nav-btn {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 18px; font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, opacity 0.15s;
+}
+.food-nav-btn:hover { background: rgba(255,255,255,0.08); }
+.food-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.food-day-label {
+  font-size: 13px; font-weight: 700; color: var(--text-primary);
+  font-family: var(--font-mono); letter-spacing: 0.02em;
+}
+
+.stack-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+}
+
+.food-stats-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+}
+@media (min-width: 480px) { .food-stats-grid { grid-template-columns: repeat(4, 1fr); } }
+.food-stat-tile {
+  padding: 12px 12px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+.food-stat-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase; color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+.food-stat-val {
+  font-size: 18px; font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.food-stat-unit {
+  font-size: 10.5px; font-weight: 500; color: var(--text-tertiary);
+  margin-left: 3px;
+}
+.food-stat-track {
+  height: 4px; margin-top: 8px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px; overflow: hidden;
+}
+.food-stat-fill {
+  height: 100%; background: var(--accent);
+  border-radius: 999px; transition: width 0.4s ease, background 0.2s;
+}
+.food-stat-fill.over { background: var(--warn); }
+
+.food-desc-input {
+  width: 100%; margin-bottom: 10px;
+  font-size: 14px; padding: 12px 13px;
+  border-radius: 12px; border: 1px solid var(--border-strong);
+  background: var(--bg-input); color: var(--text-primary);
+  font-family: inherit; outline: none;
+  transition: border-color 0.18s, background 0.18s;
+}
+.food-desc-input::placeholder { color: var(--text-tertiary); }
+.food-desc-input:focus { border-color: rgba(255,255,255,0.40); background: var(--bg-input-focus); }
+
+.food-photo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.food-photo-btn {
+  padding: 9px 14px;
+  border-radius: 10px; border: 1px solid var(--border-strong);
+  background: var(--bg-card); color: var(--text-primary);
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.food-photo-btn:hover { background: rgba(255,255,255,0.08); }
+.food-photo-preview { position: relative; width: 52px; height: 52px; }
+.food-photo-preview img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
+  border: 1px solid var(--border-strong);
+}
+.food-photo-remove {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--bad); color: #fff; border: none;
+  font-size: 13px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.food-macro-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin-bottom: 14px;
+}
+.food-field label {
+  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px;
+}
+.food-field input {
+  width: 100%; padding: 10px 8px; text-align: center;
+  border-radius: 10px; border: 1px solid var(--border-strong);
+  background: var(--bg-input); color: var(--text-primary);
+  font-family: inherit; font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  outline: none; -moz-appearance: textfield;
+}
+.food-field input::-webkit-outer-spin-button, .food-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.food-field input:focus { border-color: rgba(255,255,255,0.40); background: var(--bg-input-focus); }
+
+.food-add-actions { display: flex; gap: 8px; }
+.food-btn-secondary, .food-btn-primary {
+  flex: 1; padding: 12px; border-radius: 12px;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s, filter 0.15s;
+}
+.food-btn-secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card); color: var(--text-primary);
+}
+.food-btn-secondary:hover { background: rgba(255,255,255,0.08); }
+.food-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.food-btn-primary {
+  border: 1px solid rgba(255,255,255,0.85);
+  background: linear-gradient(180deg, #FFFFFF 0%, #E8E5DD 100%);
+  color: #0A0A0B;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 4px 14px rgba(0,0,0,0.30);
+}
+.food-btn-primary:hover { transform: translateY(-1px); }
+.food-btn-primary:active { transform: translateY(0) scale(0.98); }
+.food-status {
+  margin-top: 10px; font-size: 12px; min-height: 16px;
+  color: var(--text-tertiary);
+}
+.food-status.is-error { color: var(--bad); }
+
+.food-log-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+  align-items: center; padding: 10px 12px;
+  border-radius: 10px; background: var(--bg-secondary);
+  margin-bottom: 6px; border: 1px solid transparent;
+}
+.food-log-thumb {
+  width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+  border: 1px solid var(--border-strong);
+}
+.food-log-thumb-placeholder {
+  width: 40px; height: 40px; border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; opacity: 0.5;
+}
+.food-log-body { min-width: 0; }
+.food-log-text {
+  font-size: 13.5px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.food-log-macros {
+  font-size: 11px; color: var(--text-tertiary); margin-top: 2px;
+  font-family: var(--font-mono);
+}
+.food-log-del {
+  background: transparent; border: 1px solid var(--border-strong);
+  color: var(--text-tertiary); cursor: pointer; font-size: 15px;
+  padding: 4px 9px; border-radius: 6px; opacity: 0.7;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.food-log-row:hover .food-log-del { opacity: 1; }
+.food-log-del:hover { color: var(--bad); border-color: rgba(239,68,68,0.45); }
+.food-empty {
+  font-size: 12px; color: var(--text-quaternary); font-style: italic;
+  padding: 8px 12px;
+}
+.food-empty.hidden { display: none; }
+
+/* Camera modal */
+.food-cam {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: #000; flex-direction: column;
+}
+.food-cam.is-open { display: flex; }
+.food-cam-stage { flex: 1; position: relative; overflow: hidden; }
+.food-cam-stage video {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.food-cam-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 28px calc(20px + env(safe-area-inset-bottom));
+  background: #000;
+}
+.food-cam-btn {
+  background: transparent; border: none; color: #fff;
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; padding: 10px;
+}
+.food-cam-shutter {
+  width: 62px; height: 62px; border-radius: 50%;
+  background: #fff; border: 4px solid rgba(255,255,255,0.35);
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .food-macro-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<main>
+
+  <div class="sf-eyebrow">FOOD</div>
+  <h1 class="sf-title" id="foodAppTitle">Food & Calories</h1>
+
+  <div class="food-day-nav">
+    <button type="button" class="food-nav-btn" id="foodPrevDay" aria-label="Previous day">‹</button>
+    <div class="food-day-label" id="foodDayLabel">—</div>
+    <button type="button" class="food-nav-btn" id="foodNextDay" aria-label="Next day">›</button>
+  </div>
+
+  <div class="stack-card">
+    <div class="sf-eyebrow">TODAY'S TOTALS</div>
+    <div class="food-stats-grid" id="foodStatsGrid"></div>
+  </div>
+
+  <div class="stack-card">
+    <div class="sf-eyebrow">LOG FOOD</div>
+    <input id="foodDescInput" class="food-desc-input" type="text" placeholder="What did you eat? e.g. Grilled chicken, rice, broccoli" autocomplete="off">
+
+    <div class="food-photo-row">
+      <button type="button" id="foodPhotoBtn" class="food-photo-btn">📷 Add Photo</button>
+      <input type="file" id="foodFileInput" accept="image/*" style="display:none">
+      <div class="food-photo-preview" id="foodPhotoPreview" style="display:none;">
+        <img id="foodPhotoImg" alt="Food photo preview">
+        <button type="button" id="foodPhotoRemove" class="food-photo-remove" aria-label="Remove photo">×</button>
+      </div>
+    </div>
+
+    <div class="food-macro-grid">
+      <div class="food-field"><label>Calories</label><input id="foodCalInput" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="food-field"><label>Protein (g)</label><input id="foodProteinInput" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="food-field"><label>Carbs (g)</label><input id="foodCarbsInput" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="food-field"><label>Fat (g)</label><input id="foodFatInput" type="number" inputmode="numeric" placeholder="0"></div>
+    </div>
+
+    <div class="food-add-actions">
+      <button type="button" id="foodEstimateBtn" class="food-btn-secondary">✨ AI Estimate</button>
+      <button type="button" id="foodAddBtn" class="food-btn-primary">+ Log it</button>
+    </div>
+    <div class="food-status" id="foodStatus"></div>
+  </div>
+
+  <div class="stack-card">
+    <div class="sf-eyebrow">LOG</div>
+    <div id="foodLogList"></div>
+    <div class="food-empty" id="foodEmpty">Nothing logged for this day yet.</div>
+  </div>
+
+</main>
+
+<!-- Camera modal — in-browser capture with a file-input fallback -->
+<div class="food-cam" id="foodCam" aria-hidden="true">
+  <div class="food-cam-stage">
+    <video id="foodCamVideo" autoplay playsinline muted></video>
+    <canvas id="foodCamCanvas" style="display:none"></canvas>
+  </div>
+  <div class="food-cam-actions">
+    <button type="button" id="foodCamCancel" class="food-cam-btn">Cancel</button>
+    <button type="button" id="foodCamShutter" class="food-cam-shutter" aria-label="Capture"></button>
+    <button type="button" id="foodCamLibrary" class="food-cam-btn">Library</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  document.getElementById('foodAppTitle').textContent = CONFIG.appTitle;
+
+  const FOOD_KEY = 'food_log_v1';
+
+  function $(id) { return document.getElementById(id); }
+
+  function loadFood() {
+    try {
+      const raw = localStorage.getItem(FOOD_KEY);
+      const obj = raw ? JSON.parse(raw) : {};
+      return (obj && typeof obj === 'object') ? obj : {};
+    } catch (e) { return {}; }
+  }
+  function saveFood(obj) {
+    try { localStorage.setItem(FOOD_KEY, JSON.stringify(obj)); } catch (e) {}
+  }
+  let foodLog = loadFood();
+
+  function dateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function fmtDayLabel(d, todayStr) {
+    const key = dateKey(d);
+    const wk = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+    const base = wk + ', ' + mo + ' ' + d.getDate();
+    return key === todayStr ? ('Today — ' + base) : base;
+  }
+
+  let activeDate = new Date();
+
+  function activeKey() { return dateKey(activeDate); }
+  function todayKeyStr() { return dateKey(new Date()); }
+
+  // ---------- Photo capture (in-browser camera, falls back to file input) ----------
+  let camStream = null;
+  let currentPhoto = null; // compressed dataURL, or null
+
+  function compressPhotoDataUrl(dataUrl, maxDim, quality) {
+    maxDim = maxDim || 480;
+    quality = quality == null ? 0.6 : quality;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+          else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        try { resolve(c.toDataURL('image/jpeg', quality)); }
+        catch (e) { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  function setPhoto(dataUrl) {
+    currentPhoto = dataUrl;
+    $('foodPhotoImg').src = dataUrl;
+    $('foodPhotoPreview').style.display = 'block';
+  }
+  function clearPhoto() {
+    currentPhoto = null;
+    $('foodPhotoImg').src = '';
+    $('foodPhotoPreview').style.display = 'none';
+  }
+
+  async function fileToPhoto(file) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const compressed = await compressPhotoDataUrl(e.target.result);
+      setPhoto(compressed);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function openCam() {
+    $('foodCam').classList.add('is-open');
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      $('foodCamVideo').srcObject = camStream;
+    } catch (e) {
+      try {
+        camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        $('foodCamVideo').srcObject = camStream;
+      } catch (e2) {
+        closeCam();
+        alert('Camera unavailable. Use "Library" instead.');
+        throw e2;
+      }
+    }
+  }
+  function closeCam() {
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    $('foodCamVideo').srcObject = null;
+    $('foodCam').classList.remove('is-open');
+  }
+
+  $('foodPhotoBtn').addEventListener('click', async () => {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try { await openCam(); return; } catch (e) {}
+    }
+    $('foodFileInput').click();
+  });
+  $('foodCamCancel').addEventListener('click', closeCam);
+  $('foodCamLibrary').addEventListener('click', () => { closeCam(); $('foodFileInput').click(); });
+  $('foodCamShutter').addEventListener('click', async () => {
+    const video = $('foodCamVideo'), canvas = $('foodCamCanvas');
+    if (!video.videoWidth) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const raw = canvas.toDataURL('image/jpeg', 0.85);
+    closeCam();
+    setPhoto(await compressPhotoDataUrl(raw));
+  });
+  $('foodFileInput').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) fileToPhoto(f);
+    e.target.value = '';
+  });
+  $('foodPhotoRemove').addEventListener('click', clearPhoto);
+
+  // ---------- Status line ----------
+  function showStatus(message, isError) {
+    const el = $('foodStatus');
+    el.textContent = message;
+    el.classList.toggle('is-error', !!isError);
+  }
+
+  // ---------- AI Estimate ----------
+  // Reads the description and/or photo and asks Claude to fill in the
+  // macro fields. Fully wired — just needs CONFIG.anthropicApiKey set.
+  async function estimateFromAI() {
+    if (!CONFIG.anthropicApiKey) {
+      showStatus('Add an Anthropic API key in CONFIG (top of food.html) to enable this — enter values manually for now.', true);
+      return;
+    }
+    const text = $('foodDescInput').value.trim();
+    if (!text && !currentPhoto) {
+      showStatus('Add a description or photo first.', true);
+      return;
+    }
+    const btn = $('foodEstimateBtn');
+    btn.disabled = true;
+    showStatus('Estimating…', false);
+    try {
+      const content = [{
+        type: 'text',
+        text: 'Estimate the nutrition for this meal. Return ONLY a JSON object like ' +
+          '{"calories":number,"proteinG":number,"carbsG":number,"fatG":number} — no preamble, no code fences.' +
+          (text ? ('\n\nDescription: ' + text) : '')
+      }];
+      if (currentPhoto) {
+        const match = currentPhoto.match(/^data:(.+);base64,(.+)$/);
+        if (match) content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+      }
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': CONFIG.anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 300, messages: [{ role: 'user', content }] })
+      });
+      const data = await res.json();
+      const raw = (data && data.content && data.content[0] && data.content[0].text) || '';
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.calories === 'number') $('foodCalInput').value = Math.round(parsed.calories);
+      if (typeof parsed.proteinG === 'number') $('foodProteinInput').value = Math.round(parsed.proteinG);
+      if (typeof parsed.carbsG === 'number') $('foodCarbsInput').value = Math.round(parsed.carbsG);
+      if (typeof parsed.fatG === 'number') $('foodFatInput').value = Math.round(parsed.fatG);
+      showStatus('Estimate filled in — review before logging.', false);
+    } catch (e) {
+      showStatus('Estimate failed — enter values manually.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  $('foodEstimateBtn').addEventListener('click', estimateFromAI);
+
+  // ---------- Add entry ----------
+  $('foodAddBtn').addEventListener('click', () => {
+    const text = $('foodDescInput').value.trim();
+    if (!text) { showStatus('Add a description first.', true); return; }
+    const entry = {
+      id: 'f' + Date.now() + Math.random().toString(36).slice(2, 7),
+      text,
+      calories: Number($('foodCalInput').value) || 0,
+      proteinG: Number($('foodProteinInput').value) || 0,
+      carbsG: Number($('foodCarbsInput').value) || 0,
+      fatG: Number($('foodFatInput').value) || 0,
+      photo: currentPhoto,
+      loggedAt: Date.now()
+    };
+    const key = activeKey();
+    if (!foodLog[key]) foodLog[key] = [];
+    foodLog[key].push(entry);
+    saveFood(foodLog);
+
+    $('foodDescInput').value = '';
+    $('foodCalInput').value = '';
+    $('foodProteinInput').value = '';
+    $('foodCarbsInput').value = '';
+    $('foodFatInput').value = '';
+    clearPhoto();
+    showStatus('Logged.', false);
+    renderAll();
+  });
+
+  function deleteEntry(id) {
+    const key = activeKey();
+    foodLog[key] = (foodLog[key] || []).filter(e => e.id !== id);
+    saveFood(foodLog);
+    renderAll();
+  }
+
+  // ---------- Day navigation ----------
+  $('foodPrevDay').addEventListener('click', () => {
+    activeDate.setDate(activeDate.getDate() - 1);
+    renderAll();
+  });
+  $('foodNextDay').addEventListener('click', () => {
+    if (activeKey() >= todayKeyStr()) return;
+    activeDate.setDate(activeDate.getDate() + 1);
+    renderAll();
+  });
+
+  // ---------- Rendering ----------
+  function renderDayLabel() {
+    $('foodDayLabel').textContent = fmtDayLabel(activeDate, todayKeyStr());
+    $('foodNextDay').disabled = activeKey() >= todayKeyStr();
+  }
+
+  function renderStats() {
+    const entries = foodLog[activeKey()] || [];
+    const totals = entries.reduce((acc, e) => {
+      acc.calories += Number(e.calories) || 0;
+      acc.proteinG += Number(e.proteinG) || 0;
+      acc.carbsG   += Number(e.carbsG) || 0;
+      acc.fatG     += Number(e.fatG) || 0;
+      return acc;
+    }, { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+
+    const stats = [
+      { label: 'Calories', val: totals.calories, target: CONFIG.targets.calories, unit: '' },
+      { label: 'Protein',  val: totals.proteinG, target: CONFIG.targets.proteinG, unit: 'g' },
+      { label: 'Carbs',    val: totals.carbsG,   target: CONFIG.targets.carbsG,   unit: 'g' },
+      { label: 'Fat',      val: totals.fatG,     target: CONFIG.targets.fatG,     unit: 'g' }
+    ];
+
+    const grid = $('foodStatsGrid');
+    grid.innerHTML = '';
+    stats.forEach(s => {
+      const pct = s.target > 0 ? Math.min(100, Math.round((s.val / s.target) * 100)) : 0;
+      const over = s.target > 0 && s.val > s.target;
+
+      const tile = document.createElement('div');
+      tile.className = 'food-stat-tile';
+
+      const label = document.createElement('div');
+      label.className = 'food-stat-label';
+      label.textContent = s.label;
+
+      const val = document.createElement('div');
+      val.className = 'food-stat-val';
+      val.textContent = Math.round(s.val);
+      const unit = document.createElement('span');
+      unit.className = 'food-stat-unit';
+      unit.textContent = s.unit + ' / ' + s.target + s.unit;
+      val.appendChild(unit);
+
+      const track = document.createElement('div');
+      track.className = 'food-stat-track';
+      const fill = document.createElement('div');
+      fill.className = 'food-stat-fill' + (over ? ' over' : '');
+      fill.style.width = pct + '%';
+      track.appendChild(fill);
+
+      tile.appendChild(label);
+      tile.appendChild(val);
+      tile.appendChild(track);
+      grid.appendChild(tile);
+    });
+  }
+
+  function renderLog() {
+    const entries = foodLog[activeKey()] || [];
+    const list = $('foodLogList');
+    const empty = $('foodEmpty');
+    list.innerHTML = '';
+    empty.classList.toggle('hidden', entries.length > 0);
+
+    entries.slice().reverse().forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'food-log-row';
+
+      if (entry.photo) {
+        const img = document.createElement('img');
+        img.className = 'food-log-thumb';
+        img.src = entry.photo;
+        img.alt = '';
+        row.appendChild(img);
+      } else {
+        const ph = document.createElement('div');
+        ph.className = 'food-log-thumb-placeholder';
+        ph.textContent = '🍽️';
+        row.appendChild(ph);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'food-log-body';
+      const text = document.createElement('div');
+      text.className = 'food-log-text';
+      text.textContent = entry.text;
+      const macros = document.createElement('div');
+      macros.className = 'food-log-macros';
+      macros.textContent = Math.round(entry.calories) + ' cal · ' + Math.round(entry.proteinG) + 'p · ' + Math.round(entry.carbsG) + 'c · ' + Math.round(entry.fatG) + 'f';
+      body.appendChild(text);
+      body.appendChild(macros);
+      row.appendChild(body);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'food-log-del';
+      del.setAttribute('aria-label', 'Delete entry');
+      del.textContent = '×';
+      del.addEventListener('click', () => deleteEntry(entry.id));
+      row.appendChild(del);
+
+      list.appendChild(row);
+    });
+  }
+
+  function renderAll() {
+    renderDayLabel();
+    renderStats();
+    renderLog();
+  }
+
+  renderAll();
+
+  window.addEventListener('storage', () => {
+    foodLog = loadFood();
+    renderAll();
+  });
+})();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  if (typeof initCloudSync !== 'function') return;
+  initCloudSync({
+    appKey: 'food',
+    syncedKeys: ['food_log_v1'],
+    onApplied: function () {
+      window.dispatchEvent(new Event('storage'));
+    }
+  });
+});
+</script>
+
+</body>
+</html>
