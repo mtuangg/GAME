@@ -94,10 +94,25 @@ const CONFIG = {
   // Cardio goals — plain weekly frequency targets, no weight/rep
   // progression. Tap a day pill in the app to mark that day done;
   // `timesPerWeek` is just the label shown ("2/3 this week").
+  // Use `minutesPerDay` instead of `timesPerWeek` for a daily (not
+  // weekly) target — every day counts, not just some of them.
+  // `plan` (optional, 7 entries, Mon→Sun) shows as a rotating
+  // suggested plan in that day's note placeholder — purely a hint,
+  // never saved unless you actually type something.
   // `id` must be a short unique slug.
   cardio: [
     { id: "run-mile", name: "Run a mile", timesPerWeek: 3 },
-    { id: "sprints",  name: "Sprints",    timesPerWeek: 2 }
+    { id: "sprints",  name: "Sprints",    timesPerWeek: 2 },
+    { id: "soccer",   name: "Soccer", minutesPerDay: 15,
+      plan: [
+        "Dribbling drills — tight touches through cones",
+        "Juggling + wall passes, both feet",
+        "Light scrimmage or 1v1s",
+        "Shooting practice — both feet",
+        "First touch + ball control drills",
+        "Sprints and agility work with the ball",
+        "Free play — whatever's fun"
+      ] }
   ]
 };
 </script>
@@ -787,6 +802,19 @@ img, video, canvas, svg { max-width: 100%; }
 .cardio-empty {
   text-align: center; padding: 10px 0; font-size: 12px; color: var(--text-3); font-style: italic;
 }
+.cardio-note-input {
+  width: 100%; margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.24);
+  color: var(--text-2);
+  font-family: inherit; font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.cardio-note-input::placeholder { color: var(--text-3); font-style: italic; }
+.cardio-note-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.32); color: var(--text-1); }
 
 /* Today's Workout + Past Workouts */
 .po-tw {
@@ -2670,10 +2698,11 @@ img, video, canvas, svg { max-width: 100%; }
   }
 
   // ============================================================
-  // CARDIO — plain weekly frequency targets (Run a mile 3x/week,
-  // Sprints 2x/week, ...). Independent of the weight/rep lifting log:
-  // no weight, no progression, just "did I do it this week".
-  // Persisted: po_coach_cardio : { [cardioId]: ['YYYY-MM-DD', ...] }
+  // CARDIO — plain weekly (or daily) frequency targets (Run a mile
+  // 3x/week, Sprints 2x/week, Soccer 15min/day, ...). Independent of
+  // the weight/rep lifting log: no weight, no progression, just "did
+  // I do it" plus an optional free-text note for today.
+  // Persisted: po_coach_cardio : { [cardioId]: { 'YYYY-MM-DD': { done, note } } }
   // ============================================================
   const CARDIO_KEY = 'po_coach_cardio';
   const CARDIO_TYPES = Array.isArray(CONFIG.cardio) ? CONFIG.cardio : [];
@@ -2682,13 +2711,33 @@ img, video, canvas, svg { max-width: 100%; }
     try {
       const raw = localStorage.getItem(CARDIO_KEY);
       const obj = raw ? JSON.parse(raw) : {};
-      return (obj && typeof obj === 'object') ? obj : {};
+      if (!obj || typeof obj !== 'object') return {};
+      // Migrate legacy format — cardioLogs[id] used to be a plain
+      // array of done date strings. New format tracks a note per day.
+      Object.keys(obj).forEach(id => {
+        if (Array.isArray(obj[id])) {
+          const migrated = {};
+          obj[id].forEach(dateKey => { migrated[dateKey] = { done: true, note: '' }; });
+          obj[id] = migrated;
+        }
+      });
+      return obj;
     } catch (e) { return {}; }
   }
   function cardioSave(obj) {
     try { localStorage.setItem(CARDIO_KEY, JSON.stringify(obj)); } catch (e) {}
   }
   let cardioLogs = cardioLoad();
+
+  function cardioDayRecord(id, dateKey) {
+    const rec = cardioLogs[id] || {};
+    return rec[dateKey] || { done: false, note: '' };
+  }
+  function cardioSetDay(id, dateKey, patch) {
+    if (!cardioLogs[id]) cardioLogs[id] = {};
+    cardioLogs[id][dateKey] = Object.assign({}, cardioDayRecord(id, dateKey), patch);
+    cardioSave(cardioLogs);
+  }
 
   function cardioDateKey(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -2710,11 +2759,7 @@ img, video, canvas, svg { max-width: 100%; }
   }
 
   function cardioToggle(id, dateKey) {
-    const list = cardioLogs[id] || [];
-    const idx = list.indexOf(dateKey);
-    if (idx === -1) list.push(dateKey); else list.splice(idx, 1);
-    cardioLogs[id] = list;
-    cardioSave(cardioLogs);
+    cardioSetDay(id, dateKey, { done: !cardioDayRecord(id, dateKey).done });
     cardioRender();
   }
 
@@ -2729,10 +2774,10 @@ img, video, canvas, svg { max-width: 100%; }
     const weekDays = cardioWeekDates();
     const todayKey = cardioDateKey(new Date());
     const dayLetters = ['M','T','W','T','F','S','S'];
+    const todayDow = (new Date().getDay() + 6) % 7; // 0 = Monday
 
     CARDIO_TYPES.forEach(ct => {
-      const list = cardioLogs[ct.id] || [];
-      const doneThisWeek = weekDays.filter(d => list.indexOf(cardioDateKey(d)) !== -1).length;
+      const doneThisWeek = weekDays.filter(d => cardioDayRecord(ct.id, cardioDateKey(d)).done).length;
 
       const row = document.createElement('div');
       row.className = 'cardio-row';
@@ -2744,7 +2789,9 @@ img, video, canvas, svg { max-width: 100%; }
       name.textContent = ct.name;
       const target = document.createElement('span');
       target.className = 'cardio-target';
-      target.textContent = doneThisWeek + ' / ' + ct.timesPerWeek + ' this week';
+      target.textContent = ct.timesPerWeek
+        ? (doneThisWeek + ' / ' + ct.timesPerWeek + ' this week')
+        : (doneThisWeek + ' / 7 this week · ' + ct.minutesPerDay + ' min/day');
       top.appendChild(name);
       top.appendChild(target);
       row.appendChild(top);
@@ -2757,7 +2804,7 @@ img, video, canvas, svg { max-width: 100%; }
         btn.type = 'button';
         btn.className = 'cardio-day-btn';
         btn.textContent = dayLetters[i];
-        const isDone = list.indexOf(key) !== -1;
+        const isDone = cardioDayRecord(ct.id, key).done;
         const isFuture = key > todayKey;
         if (isDone) btn.classList.add('is-done');
         if (key === todayKey) btn.classList.add('is-today');
@@ -2767,6 +2814,20 @@ img, video, canvas, svg { max-width: 100%; }
         daysRow.appendChild(btn);
       });
       row.appendChild(daysRow);
+
+      // Free-text note for today — a plan you can follow, edit, or
+      // ignore (shown as a placeholder hint), or just write what you
+      // actually did.
+      const noteInput = document.createElement('input');
+      noteInput.type = 'text';
+      noteInput.className = 'cardio-note-input';
+      const planHint = Array.isArray(ct.plan) ? ct.plan[todayDow] : '';
+      noteInput.placeholder = planHint || "What did you do today?";
+      noteInput.value = cardioDayRecord(ct.id, todayKey).note || '';
+      noteInput.addEventListener('change', () => {
+        cardioSetDay(ct.id, todayKey, { note: noteInput.value });
+      });
+      row.appendChild(noteInput);
 
       wrap.appendChild(row);
     });
