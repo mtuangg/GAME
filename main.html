@@ -1208,24 +1208,24 @@ body::after {
     });
     main.appendChild(del);
 
-    // Completion note — only relevant once a task is actually done.
-    if (goal.done && !readOnly) {
-      const noteWrap = document.createElement('div');
-      noteWrap.className = 'gm-row-note';
-      const noteInput = document.createElement('input');
-      noteInput.type = 'text';
-      noteInput.className = 'gm-note-input';
-      noteInput.placeholder = 'Add a note about how it went…';
-      noteInput.value = goal.note || '';
-      noteInput.addEventListener('change', () => {
-        const list = getGoals(key);
-        if (!list[idx]) return;
-        list[idx].note = noteInput.value;
-        setGoals(key, list);
-      });
-      noteWrap.appendChild(noteInput);
-      li.appendChild(noteWrap);
-    }
+    // Description — free text for whatever you want to note about this
+    // specific task today (plans, details, how it went). Available on
+    // every task, done or not.
+    const noteWrap = document.createElement('div');
+    noteWrap.className = 'gm-row-note';
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.className = 'gm-note-input';
+    noteInput.placeholder = 'Add a description…';
+    noteInput.value = goal.note || '';
+    noteInput.addEventListener('change', () => {
+      const list = getGoals(key);
+      if (!list[idx]) return;
+      list[idx].note = noteInput.value;
+      setGoals(key, list);
+    });
+    noteWrap.appendChild(noteInput);
+    li.appendChild(noteWrap);
 
     wireDragReorder(li, null, key, reload);
     return li;
