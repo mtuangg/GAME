@@ -448,6 +448,23 @@ body::after {
 }
 .gm-check:disabled { cursor: not-allowed; opacity: 0.55; }
 
+.gm-time {
+  flex-shrink: 0;
+  width: 92px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.24);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.gm-time::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; cursor: pointer; }
+.gm-time:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.32); color: var(--text-primary); }
+.gm-time:disabled { cursor: not-allowed; opacity: 0.55; }
+
 .gm-text {
   flex: 1;
   font-size: 14px;
@@ -549,6 +566,20 @@ body::after {
 }
 .gm-input::placeholder { color: var(--text-tertiary); }
 .gm-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
+
+.gm-time-input {
+  width: 108px; flex-shrink: 0;
+  padding: 11px 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.28);
+  color: var(--text-primary);
+  font-family: inherit; font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.gm-time-input::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; cursor: pointer; }
+.gm-time-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
 
 .gm-add {
   padding: 11px 20px;
@@ -666,6 +697,7 @@ body::after {
       <div id="emptyState" class="empty-state">No goals for today yet — add one below.</div>
       <button type="button" id="gmPushBtn" class="gm-push-btn" style="display:none;">Push remaining to tomorrow</button>
       <div class="goal-input-wrap gm-input-wrap">
+        <input id="goalTimeInput" class="gm-time-input" type="time">
         <input id="goalInput" class="gm-input" type="text" placeholder="Add a goal for today…" autocomplete="off">
         <button type="button" id="goalAddBtn"    class="gm-add">+ Add</button>
         <button type="button" id="goalPolishBtn" class="gm-polish">✨ Polish</button>
@@ -685,6 +717,7 @@ body::after {
       <ul id="tomorrowList" class="goal-list gm-list"></ul>
       <div id="tomorrowEmpty" class="empty-state">Nothing planned for tomorrow yet</div>
       <div class="goal-input-wrap gm-input-wrap">
+        <input id="tomorrowTimeInput" class="gm-time-input" type="time">
         <input id="tomorrowInput" class="gm-input" type="text" placeholder="Add a goal for tomorrow…" autocomplete="off">
         <button type="button" id="tomorrowAddBtn"    class="gm-add">+ Add</button>
         <button type="button" id="tomorrowPolishBtn" class="gm-polish">✨ Polish</button>
@@ -773,7 +806,9 @@ body::after {
       const old = getGoals(k);
       old.forEach(g => {
         if (!g.done && g.text && !texts.has(g.text)) {
-          today.push({ text: g.text, done: false });
+          const carried = { text: g.text, done: false };
+          if (g.time) carried.time = g.time;
+          today.push(carried);
           texts.add(g.text);
         }
       });
@@ -1063,6 +1098,19 @@ body::after {
     });
     li.appendChild(cb);
 
+    const time = document.createElement('input');
+    time.type = 'time';
+    time.className = 'gm-time';
+    time.value = goal.time || '';
+    if (readOnly) time.disabled = true;
+    time.addEventListener('change', () => {
+      const list = getGoals(key);
+      if (!list[idx]) return;
+      list[idx].time = time.value;
+      setGoals(key, list);
+    });
+    li.appendChild(time);
+
     const text = document.createElement('span');
     text.className = 'gm-text';
     text.textContent = goal.text;
@@ -1199,7 +1247,12 @@ body::after {
     const tomorrow = getGoals(tomorrowKey());
     const seen = new Set(tomorrow.map(g => g.text));
     remaining.forEach(g => {
-      if (!seen.has(g.text)) { tomorrow.push({ text: g.text, done: false }); seen.add(g.text); }
+      if (!seen.has(g.text)) {
+        const carried = { text: g.text, done: false };
+        if (g.time) carried.time = g.time;
+        tomorrow.push(carried);
+        seen.add(g.text);
+      }
     });
     setGoals(tomorrowKey(), tomorrow);
     setGoals(todayKey(), today.filter(g => g.done));
@@ -1241,12 +1294,15 @@ body::after {
     return arr[0].trim();
   }
 
-  function makeAddHandlers(input, addBtn, polishBtn, key, statusEl, reload) {
+  function makeAddHandlers(input, addBtn, polishBtn, key, statusEl, reload, timeInput) {
     function plainAdd(text) {
+      const goal = { text, done: false };
+      if (timeInput && timeInput.value) goal.time = timeInput.value;
       const list = getGoals(key);
-      list.push({ text, done: false });
+      list.push(goal);
       setGoals(key, list);
       input.value = '';
+      if (timeInput) timeInput.value = '';
       reload();
     }
     addBtn.addEventListener('click', () => {
@@ -1284,7 +1340,8 @@ body::after {
     document.getElementById('goalPolishBtn'),
     todayKey(),
     document.getElementById('polishStatus'),
-    loadToday
+    loadToday,
+    document.getElementById('goalTimeInput')
   );
   makeAddHandlers(
     document.getElementById('tomorrowInput'),
@@ -1292,7 +1349,8 @@ body::after {
     document.getElementById('tomorrowPolishBtn'),
     tomorrowKey(),
     document.getElementById('tomorrowStatus'),
-    loadTomorrow
+    loadTomorrow,
+    document.getElementById('tomorrowTimeInput')
   );
 
   // ---------- Boot ----------
