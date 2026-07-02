@@ -101,10 +101,13 @@ const CONFIG = {
   // `plan` (optional, 7 entries, Mon→Sun) shows as a rotating
   // suggested plan in that day's note placeholder — purely a hint,
   // never saved unless you actually type something.
+  // `conflictsWith` (optional, array of other cardio ids) — greys out
+  // that day's pill on this item once ANY listed id is marked done
+  // for that day (and vice versa), so you can't double up leg days.
   // `id` must be a short unique slug.
   cardio: [
-    { id: "run-mile", name: "Run a mile", timesPerWeek: 3, streak: true },
-    { id: "sprints",  name: "Sprints",    timesPerWeek: 2, streak: true },
+    { id: "run-mile", name: "Run a mile", timesPerWeek: 3, streak: true, conflictsWith: ["sprints"] },
+    { id: "sprints",  name: "Sprints",    timesPerWeek: 2, streak: true, conflictsWith: ["run-mile"] },
     { id: "soccer",   name: "Soccer", timesPerWeek: 5, minutesPerSession: 15, streak: true,
       plan: [
         "Dribbling drills — tight touches through cones",
@@ -808,6 +811,12 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .cardio-day-btn.is-today { border-color: rgba(255,255,255,0.30); }
 .cardio-day-btn.is-future { opacity: 0.35; cursor: not-allowed; }
+.cardio-day-btn.is-blocked {
+  opacity: 0.4; cursor: not-allowed;
+  background: rgba(255,138,138,0.06);
+  border-color: rgba(255,138,138,0.18);
+  color: var(--bad);
+}
 .cardio-empty {
   text-align: center; padding: 10px 0; font-size: 12px; color: var(--text-3); font-style: italic;
 }
@@ -2832,6 +2841,8 @@ img, video, canvas, svg { max-width: 100%; }
       top.appendChild(target);
       row.appendChild(top);
 
+      const conflictIds = Array.isArray(ct.conflictsWith) ? ct.conflictsWith : [];
+
       const daysRow = document.createElement('div');
       daysRow.className = 'cardio-days';
       weekDays.forEach((d, i) => {
@@ -2842,10 +2853,18 @@ img, video, canvas, svg { max-width: 100%; }
         btn.textContent = dayLetters[i];
         const isDone = cardioDayRecord(ct.id, key).done;
         const isFuture = key > todayKey;
+        const blockingId = !isDone ? conflictIds.find(cid => cardioDayRecord(cid, key).done) : null;
         if (isDone) btn.classList.add('is-done');
         if (key === todayKey) btn.classList.add('is-today');
-        if (isFuture) { btn.classList.add('is-future'); btn.disabled = true; }
-        btn.title = key;
+        if (isFuture) {
+          btn.classList.add('is-future'); btn.disabled = true; btn.title = key;
+        } else if (blockingId) {
+          const blockingName = (CARDIO_TYPES.find(c => c.id === blockingId) || {}).name || blockingId;
+          btn.classList.add('is-blocked'); btn.disabled = true;
+          btn.title = 'Already logged ' + blockingName + ' that day';
+        } else {
+          btn.title = key;
+        }
         btn.addEventListener('click', () => cardioToggle(ct.id, key));
         daysRow.appendChild(btn);
       });
