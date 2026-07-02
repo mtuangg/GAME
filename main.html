@@ -373,7 +373,7 @@ body::after {
 }
 
 .gm-row {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-direction: column;
   padding: 12px 14px;
   margin-bottom: 6px;
   background: rgba(255,255,255,0.035);
@@ -382,6 +382,21 @@ body::after {
   transition: background 0.2s, opacity 0.3s;
   position: relative;
 }
+.gm-row-main { display: flex; align-items: center; gap: 12px; }
+.gm-row-note { margin-top: 8px; padding-left: 26px; }
+.gm-note-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.24);
+  color: var(--text-secondary);
+  font-family: inherit; font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.gm-note-input::placeholder { color: var(--text-tertiary); }
+.gm-note-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.32); color: var(--text-primary); }
 .gm-row:hover { background: rgba(255,255,255,0.06); }
 .gm-row.gm-row-done {
   opacity: 0.45;
@@ -722,6 +737,32 @@ body::after {
         <button type="button" id="tomorrowAddBtn"    class="gm-add">+ Add</button>
         <button type="button" id="tomorrowPolishBtn" class="gm-polish">✨ Polish</button>
         <div class="gm-status" id="tomorrowStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANDATORY — a standing checklist that doesn't reset daily. -->
+  <div class="section">
+    <div class="section-title">Mandatory</div>
+    <div class="gm-card" id="gmCardMandatory">
+      <ul id="mandatoryList" class="goal-list gm-list"></ul>
+      <div id="mandatoryEmpty" class="empty-state">Nothing here yet — add a must-do item below.</div>
+      <div class="goal-input-wrap gm-input-wrap">
+        <input id="mandatoryInput" class="gm-input" type="text" placeholder="Add a mandatory item…" autocomplete="off">
+        <button type="button" id="mandatoryAddBtn" class="gm-add">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEFORE SUMMER ENDS — a goal list, separate from daily to-dos. -->
+  <div class="section">
+    <div class="section-title">Before Summer Ends</div>
+    <div class="gm-card" id="gmCardSummer">
+      <ul id="summerList" class="goal-list gm-list"></ul>
+      <div id="summerEmpty" class="empty-state">No summer goals yet — add one below.</div>
+      <div class="goal-input-wrap gm-input-wrap">
+        <input id="summerInput" class="gm-input" type="text" placeholder="Add a goal for summer…" autocomplete="off">
+        <button type="button" id="summerAddBtn" class="gm-add">+ Add</button>
       </div>
     </div>
   </div>
@@ -1077,10 +1118,14 @@ body::after {
     if (goal.done) li.classList.add('gm-row-done');
     if (goal.queued) li.classList.add('gm-row-queued');
 
+    const main = document.createElement('div');
+    main.className = 'gm-row-main';
+    li.appendChild(main);
+
     const handle = document.createElement('span');
     handle.className = 'gm-handle';
     handle.textContent = '⋮⋮';
-    li.appendChild(handle);
+    main.appendChild(handle);
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -1096,7 +1141,7 @@ body::after {
       setGoals(key, list);
       reload();
     });
-    li.appendChild(cb);
+    main.appendChild(cb);
 
     const time = document.createElement('input');
     time.type = 'time';
@@ -1109,12 +1154,12 @@ body::after {
       list[idx].time = time.value;
       setGoals(key, list);
     });
-    li.appendChild(time);
+    main.appendChild(time);
 
     const text = document.createElement('span');
     text.className = 'gm-text';
     text.textContent = goal.text;
-    li.appendChild(text);
+    main.appendChild(text);
     makeInlineEdit(text, null, idx, key, reload);
 
     const queueBtn = document.createElement('button');
@@ -1131,7 +1176,7 @@ body::after {
       li.classList.add('is-queue-flashing');
       setTimeout(reload, 480);
     });
-    li.appendChild(queueBtn);
+    main.appendChild(queueBtn);
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -1144,7 +1189,26 @@ body::after {
       setGoals(key, list);
       reload();
     });
-    li.appendChild(del);
+    main.appendChild(del);
+
+    // Completion note — only relevant once a task is actually done.
+    if (goal.done && !readOnly) {
+      const noteWrap = document.createElement('div');
+      noteWrap.className = 'gm-row-note';
+      const noteInput = document.createElement('input');
+      noteInput.type = 'text';
+      noteInput.className = 'gm-note-input';
+      noteInput.placeholder = 'Add a note about how it went…';
+      noteInput.value = goal.note || '';
+      noteInput.addEventListener('change', () => {
+        const list = getGoals(key);
+        if (!list[idx]) return;
+        list[idx].note = noteInput.value;
+        setGoals(key, list);
+      });
+      noteWrap.appendChild(noteInput);
+      li.appendChild(noteWrap);
+    }
 
     wireDragReorder(li, null, key, reload);
     return li;
@@ -1334,6 +1398,45 @@ body::after {
     });
   }
 
+  // ---------- Mandatory list + Summer goals (standing lists, no daily reset) ----------
+  const MANDATORY_KEY = 'mandatory_list_v1';
+  const SUMMER_KEY = 'summer_goals_v1';
+
+  function loadMandatory() {
+    const goals = getGoals(MANDATORY_KEY);
+    const listEl = document.getElementById('mandatoryList');
+    const emptyEl = document.getElementById('mandatoryEmpty');
+    listEl.innerHTML = '';
+    emptyEl.style.display = goals.length === 0 ? 'block' : 'none';
+    goals.forEach((g, i) => listEl.appendChild(buildGoalRow(g, i, MANDATORY_KEY, false, loadMandatory)));
+  }
+
+  function loadSummer() {
+    const goals = getGoals(SUMMER_KEY);
+    const listEl = document.getElementById('summerList');
+    const emptyEl = document.getElementById('summerEmpty');
+    listEl.innerHTML = '';
+    emptyEl.style.display = goals.length === 0 ? 'block' : 'none';
+    goals.forEach((g, i) => listEl.appendChild(buildGoalRow(g, i, SUMMER_KEY, false, loadSummer)));
+  }
+
+  function wireSimpleAdd(input, addBtn, key, reload) {
+    function add() {
+      const text = input.value.trim();
+      if (!text) return;
+      const list = getGoals(key);
+      list.push({ text, done: false });
+      setGoals(key, list);
+      input.value = '';
+      reload();
+    }
+    addBtn.addEventListener('click', add);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  }
+
+  wireSimpleAdd(document.getElementById('mandatoryInput'), document.getElementById('mandatoryAddBtn'), MANDATORY_KEY, loadMandatory);
+  wireSimpleAdd(document.getElementById('summerInput'), document.getElementById('summerAddBtn'), SUMMER_KEY, loadSummer);
+
   makeAddHandlers(
     document.getElementById('goalInput'),
     document.getElementById('goalAddBtn'),
@@ -1358,6 +1461,8 @@ body::after {
   processStreak();
   loadToday();
   loadTomorrow();
+  loadMandatory();
+  loadSummer();
   renderStreak();
   updateDayRing();
   setInterval(updateDayRing, 60 * 1000);
@@ -1365,7 +1470,7 @@ body::after {
 
   // Re-render when storage changes from another tab (or our bridged parent).
   window.addEventListener('storage', () => {
-    loadToday(); loadTomorrow(); renderStreak();
+    loadToday(); loadTomorrow(); loadMandatory(); loadSummer(); renderStreak();
   });
 })();
 </script>
@@ -1376,6 +1481,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initCloudSync({
     appKey: 'goals',
     syncedPrefixes: ['goals:'],
+    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1'],
     onApplied: function () {
       window.dispatchEvent(new CustomEvent('goals-changed'));
       window.dispatchEvent(new Event('storage'));
