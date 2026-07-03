@@ -23,10 +23,18 @@
     const syncedKeys = (config && config.syncedKeys) || [];
     const syncedPrefixes = (config && config.syncedPrefixes) || [];
     const onApplied = config && config.onApplied;
-    if (!appKey) return;
-    if (!window.supabase) return;
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
-    if (SUPABASE_URL.indexOf('PASTE-') === 0 || SUPABASE_KEY.indexOf('PASTE-') === 0) return;
+    // Fires exactly once — after the initial pull from the cloud has
+    // been applied (or immediately if cloud sync isn't configured).
+    // Pages that WRITE to localStorage on boot (not just read/render)
+    // must wait for this before doing so — otherwise a page's own
+    // not-yet-synced local state can race the pull and get pushed to
+    // the cloud first, silently overwriting what another device saved.
+    const onReady = config && config.onReady;
+    function callReady() { if (typeof onReady === 'function') { try { onReady(); } catch (e) {} } }
+    if (!appKey) { callReady(); return; }
+    if (!window.supabase) { callReady(); return; }
+    if (!SUPABASE_URL || !SUPABASE_KEY) { callReady(); return; }
+    if (SUPABASE_URL.indexOf('PASTE-') === 0 || SUPABASE_KEY.indexOf('PASTE-') === 0) { callReady(); return; }
 
     let supa = null;
     let pushTimer = null;
@@ -144,6 +152,7 @@
           schedulePush();
         }
       } catch (e) {}
+      callReady();
       supa.channel('app_state_' + appKey)
         .on('postgres_changes', {
           event: '*',

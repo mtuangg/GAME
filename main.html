@@ -1542,18 +1542,30 @@ body::after {
   );
 
   // ---------- Boot ----------
-  // processStreak must run before rollover: rollover deletes each past
-  // day's 'goals:' entry once it has rolled undone items forward, so
-  // grading a day's completion has to happen first or the evidence is
-  // already gone.
-  processStreak();
-  rollover();
-  mandatoryCheckDailyReset();
-  loadToday();
-  loadTomorrow();
-  loadMandatory();
-  loadSummer();
-  renderStreak();
+  // processStreak, rollover, and mandatoryCheckDailyReset all WRITE to
+  // localStorage (moving tasks forward, resetting Mandatory's
+  // checkboxes) — so they must not run until the initial cloud pull
+  // has been applied. Otherwise this device's not-yet-synced local
+  // state can race the pull and get pushed to the cloud first,
+  // silently overwriting whatever another device had saved. See
+  // initCloudSync's onReady below.
+  function bootApp() {
+    // processStreak must run before rollover: rollover deletes each
+    // past day's 'goals:' entry once it has rolled undone items
+    // forward, so grading a day's completion has to happen first or
+    // the evidence is already gone.
+    processStreak();
+    rollover();
+    mandatoryCheckDailyReset();
+    loadToday();
+    loadTomorrow();
+    loadMandatory();
+    loadSummer();
+    renderStreak();
+  }
+
+  // Pure reads/renders — safe to start immediately, they self-correct
+  // via the 'goals-changed'/'storage' listeners once synced data lands.
   updateDayRing();
   setInterval(updateDayRing, 60 * 1000);
   startTicker();
@@ -1562,22 +1574,21 @@ body::after {
   window.addEventListener('storage', () => {
     loadToday(); loadTomorrow(); loadMandatory(); loadSummer(); renderStreak();
   });
-})();
-</script>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  if (typeof initCloudSync !== 'function') return;
-  initCloudSync({
-    appKey: 'goals',
-    syncedPrefixes: ['goals:'],
-    syncedKeys: ['mandatory_list_v1', 'summer_goals_v1', 'mandatory_streak_v1', 'goal_streak_v1'],
-    onApplied: function () {
-      window.dispatchEvent(new CustomEvent('goals-changed'));
-      window.dispatchEvent(new Event('storage'));
-    }
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof initCloudSync !== 'function') { bootApp(); return; }
+    initCloudSync({
+      appKey: 'goals',
+      syncedPrefixes: ['goals:'],
+      syncedKeys: ['mandatory_list_v1', 'summer_goals_v1', 'mandatory_streak_v1', 'goal_streak_v1'],
+      onReady: bootApp,
+      onApplied: function () {
+        window.dispatchEvent(new CustomEvent('goals-changed'));
+        window.dispatchEvent(new Event('storage'));
+      }
+    });
   });
-});
+})();
 </script>
 </body>
 </html>
