@@ -108,7 +108,7 @@ const CONFIG = {
   cardio: [
     { id: "run-mile", name: "Run a mile", timesPerWeek: 3, streak: true, conflictsWith: ["sprints"] },
     { id: "sprints",  name: "Sprints",    timesPerWeek: 2, streak: true, conflictsWith: ["run-mile"] },
-    { id: "soccer",   name: "Soccer", timesPerWeek: 5, minutesPerSession: 15, streak: true,
+    { id: "soccer",   name: "Soccer", timesPerWeek: 5, minutesPerSession: 15, streak: true, dailyPlan: true,
       plan: [
         "Dribbling drills — tight touches through cones",
         "Juggling + wall passes, both feet",
@@ -833,6 +833,31 @@ img, video, canvas, svg { max-width: 100%; }
 }
 .cardio-note-input::placeholder { color: var(--text-3); font-style: italic; }
 .cardio-note-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.32); color: var(--text-1); }
+
+.cardio-plan-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cardio-plan-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.cardio-plan-row.is-today .cardio-plan-day { color: var(--text-1); }
+.cardio-plan-day {
+  width: 32px; flex-shrink: 0;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-3);
+  font-family: var(--font-mono);
+}
+.cardio-plan-input {
+  flex: 1; min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.24);
+  color: var(--text-2);
+  font-family: inherit; font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.cardio-plan-input::placeholder { color: var(--text-3); font-style: italic; }
+.cardio-plan-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.32); color: var(--text-1); }
 
 /* Today's Workout + Past Workouts */
 .po-tw {
@@ -2870,19 +2895,48 @@ img, video, canvas, svg { max-width: 100%; }
       });
       row.appendChild(daysRow);
 
-      // Free-text note for today — a plan you can follow, edit, or
-      // ignore (shown as a placeholder hint), or just write what you
-      // actually did.
-      const noteInput = document.createElement('input');
-      noteInput.type = 'text';
-      noteInput.className = 'cardio-note-input';
-      const planHint = Array.isArray(ct.plan) ? ct.plan[todayDow] : '';
-      noteInput.placeholder = planHint || "What did you do today?";
-      noteInput.value = cardioDayRecord(ct.id, todayKey).note || '';
-      noteInput.addEventListener('change', () => {
-        cardioSetDay(ct.id, todayKey, { note: noteInput.value });
-      });
-      row.appendChild(noteInput);
+      if (ct.dailyPlan) {
+        // A separate description per day of the week — write Monday's
+        // plan, Tuesday's drills, etc. all independently.
+        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        const planList = document.createElement('div');
+        planList.className = 'cardio-plan-list';
+        weekDays.forEach((d, i) => {
+          const key = cardioDateKey(d);
+          const planRow = document.createElement('div');
+          planRow.className = 'cardio-plan-row' + (key === todayKey ? ' is-today' : '');
+          const dayLabel = document.createElement('span');
+          dayLabel.className = 'cardio-plan-day';
+          dayLabel.textContent = dayNames[i];
+          const planInput = document.createElement('input');
+          planInput.type = 'text';
+          planInput.className = 'cardio-plan-input';
+          const planHint = Array.isArray(ct.plan) ? ct.plan[i] : '';
+          planInput.placeholder = planHint || 'Add a plan or notes…';
+          planInput.value = cardioDayRecord(ct.id, key).note || '';
+          planInput.addEventListener('change', () => {
+            cardioSetDay(ct.id, key, { note: planInput.value });
+          });
+          planRow.appendChild(dayLabel);
+          planRow.appendChild(planInput);
+          planList.appendChild(planRow);
+        });
+        row.appendChild(planList);
+      } else {
+        // Free-text note for today only — a plan you can follow, edit,
+        // or ignore (shown as a placeholder hint), or just write what
+        // you actually did.
+        const noteInput = document.createElement('input');
+        noteInput.type = 'text';
+        noteInput.className = 'cardio-note-input';
+        const planHint = Array.isArray(ct.plan) ? ct.plan[todayDow] : '';
+        noteInput.placeholder = planHint || "What did you do today?";
+        noteInput.value = cardioDayRecord(ct.id, todayKey).note || '';
+        noteInput.addEventListener('change', () => {
+          cardioSetDay(ct.id, todayKey, { note: noteInput.value });
+        });
+        row.appendChild(noteInput);
+      }
 
       wrap.appendChild(row);
     });
