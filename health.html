@@ -687,7 +687,20 @@ main {
       const h = new URLSearchParams(location.hash.slice(1));
       const access = h.get('whoop_access'), refresh = h.get('whoop_refresh');
       const expires = Number(h.get('whoop_expires')) || Date.now() + 3500e3;
-      if (access) { save({ access, refresh, expires }); history.replaceState(null, '', location.pathname + location.search); }
+      // CSRF check: the state we generated and stashed before redirecting
+      // to WHOOP must match what the callback echoes back. Without this,
+      // anyone could start their own WHOOP auth flow and trick this
+      // browser into opening /api/whoop-callback?code=<their code>,
+      // linking the attacker's WHOOP account into this dashboard.
+      const returnedState = h.get('whoop_state');
+      const expectedState = sessionStorage.getItem('whoop_oauth_state');
+      sessionStorage.removeItem('whoop_oauth_state');
+      const stateOk = !!returnedState && returnedState === expectedState;
+      if (access && stateOk) { save({ access, refresh, expires }); }
+      history.replaceState(null, '', location.pathname + location.search);
+      if (access && !stateOk) {
+        document.addEventListener('DOMContentLoaded', () => showErr('WHOOP connection failed a security check — please try connecting again.'));
+      }
     }
 
     const $ = (id) => document.getElementById(id);
@@ -695,12 +708,16 @@ main {
     function showErr(m) { errEl.textContent = m || ''; errEl.style.display = m ? 'block' : 'none'; }
 
     $('whConnectBtn').addEventListener('click', () => {
+      // Stash the state in sessionStorage so the redirect back can prove
+      // it's answering THIS browser's request, not an attacker's.
+      const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      sessionStorage.setItem('whoop_oauth_state', state);
       const url = 'https://api.prod.whoop.com/oauth/oauth2/auth'
         + '?client_id='     + encodeURIComponent(CLIENT_ID)
         + '&redirect_uri='  + encodeURIComponent(REDIRECT)
         + '&response_type=code'
         + '&scope='         + encodeURIComponent(SCOPES)
-        + '&state='         + Math.random().toString(36).slice(2);
+        + '&state='         + encodeURIComponent(state);
       location.href = url;
     });
     $('whDisconnectBtn').addEventListener('click', () => { wipe(); render(); });

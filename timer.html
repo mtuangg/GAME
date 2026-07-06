@@ -352,9 +352,9 @@ body::after {
     return streak;
   }
 
-  function addSeconds(state, type, seconds) {
+  function addSeconds(state, type, seconds, dateKey) {
     if (seconds <= 0) return;
-    const k = calendarDateKey();
+    const k = dateKey || calendarDateKey();
     state.logs[k] = state.logs[k] || { deep: 0, study: 0 };
     state.logs[k][type] = (state.logs[k][type] || 0) + seconds;
   }
@@ -371,7 +371,7 @@ body::after {
     const st = load();
     if (st.active) return; // one session at a time
     const targetSec = Math.max(60, (st.settings[type].targetMin || 25) * 60);
-    st.active = { type: type, targetSec: targetSec, remainingSec: targetSec, running: true, endsAt: Date.now() + targetSec * 1000 };
+    st.active = { type: type, targetSec: targetSec, remainingSec: targetSec, running: true, endsAt: Date.now() + targetSec * 1000, dateKey: calendarDateKey() };
     save(st);
     renderAll(st);
   }
@@ -396,7 +396,7 @@ body::after {
     const a = st.active;
     const remaining = a.running ? Math.max(0, Math.round((a.endsAt - Date.now()) / 1000)) : a.remainingSec;
     const elapsed = Math.max(0, a.targetSec - remaining);
-    addSeconds(st, type, elapsed);
+    addSeconds(st, type, elapsed, a.dateKey);
     st.active = null;
     save(st);
     renderAll(st);
@@ -405,7 +405,7 @@ body::after {
 
   function completeNaturally(state) {
     const a = state.active;
-    addSeconds(state, a.type, a.targetSec);
+    addSeconds(state, a.type, a.targetSec, a.dateKey);
     state.active = null;
     save(state);
     beep();
@@ -547,13 +547,17 @@ body::after {
   window.addEventListener('storage', () => renderAll());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) renderAll(); });
 
-  if (window.initCloudSync) {
+  // sync.js is loaded with `defer`, so it may not have run yet when this
+  // inline script executes — wait for DOMContentLoaded (which always fires
+  // after deferred scripts) before checking for initCloudSync.
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof window.initCloudSync !== 'function') return;
     window.initCloudSync({
       appKey: 'timer',
       syncedKeys: [STORE_KEY],
       onApplied: () => renderAll(),
     });
-  }
+  });
 })();
 </script>
 </body>

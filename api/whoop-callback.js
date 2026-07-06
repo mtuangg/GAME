@@ -13,6 +13,11 @@
 export default async function handler(req, res) {
   const code = req.query && req.query.code;
   const errorParam = req.query && req.query.error;
+  // Echoed back to the client unchanged — this server is stateless (no
+  // session store), so it can't verify the state itself. health.html
+  // compares this against the value it stashed in sessionStorage before
+  // redirecting here, and refuses to save tokens on a mismatch.
+  const state = (req.query && req.query.state) || '';
   if (errorParam) return res.status(400).send('WHOOP auth error: ' + errorParam);
   if (!code) return res.status(400).send('Missing code parameter.');
 
@@ -57,6 +62,7 @@ export default async function handler(req, res) {
       whoop_access:  access,
       whoop_refresh: refresh,
       whoop_expires: String(Date.now() + expiresIn * 1000),
+      whoop_state:   state,
     }).toString();
     res.writeHead(302, { Location: '/health.html#' + hash });
     res.end();

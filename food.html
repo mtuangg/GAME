@@ -27,12 +27,11 @@ const CONFIG = {
     fatG: 70
   },
 
-  // Paste an Anthropic API key here to turn on "AI Estimate" (reads
-  // your description and/or photo and fills in calories/macros for
-  // you — review before logging). Leave blank and the button just
-  // reminds you to add a key; manual entry always works either way.
-  // Get a key at https://console.anthropic.com
-  anthropicApiKey: ""
+  // "AI Estimate" (reads your description and/or photo and fills in
+  // calories/macros for you — review before logging) is powered by a
+  // server-side proxy (api/food-estimate.js) so the Anthropic key never
+  // ships to the browser. Set it via the ANTHROPIC_API_KEY Vercel env
+  // var — see SETUP.md. Manual entry always works either way.
 };
 </script>
 
@@ -511,13 +510,10 @@ main {
   }
 
   // ---------- AI Estimate ----------
-  // Reads the description and/or photo and asks Claude to fill in the
-  // macro fields. Fully wired — just needs CONFIG.anthropicApiKey set.
+  // Reads the description and/or photo and asks Claude (via the
+  // api/food-estimate server proxy, which holds the real API key) to
+  // fill in the macro fields.
   async function estimateFromAI() {
-    if (!CONFIG.anthropicApiKey) {
-      showStatus('Add an Anthropic API key in CONFIG (top of food.html) to enable this — enter values manually for now.', true);
-      return;
-    }
     const text = $('foodDescInput').value.trim();
     if (!text && !currentPhoto) {
       showStatus('Add a description or photo first.', true);
@@ -527,33 +523,28 @@ main {
     btn.disabled = true;
     showStatus('Estimating…', false);
     try {
-      const content = [{
-        type: 'text',
-        text: 'Estimate the nutrition for this meal. Return ONLY a JSON object like ' +
-          '{"calories":number,"proteinG":number,"carbsG":number,"fatG":number} — no preamble, no code fences.' +
-          (text ? ('\n\nDescription: ' + text) : '')
-      }];
+      const payload = { text };
       if (currentPhoto) {
         const match = currentPhoto.match(/^data:(.+);base64,(.+)$/);
-        if (match) content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+        if (match) payload.image = { mediaType: match[1], data: match[2] };
       }
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/food-estimate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': CONFIG.anthropicApiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 300, messages: [{ role: 'user', content }] })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      const raw = (data && data.content && data.content[0] && data.content[0].text) || '';
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.calories === 'number') $('foodCalInput').value = Math.round(parsed.calories);
-      if (typeof parsed.proteinG === 'number') $('foodProteinInput').value = Math.round(parsed.proteinG);
-      if (typeof parsed.carbsG === 'number') $('foodCarbsInput').value = Math.round(parsed.carbsG);
-      if (typeof parsed.fatG === 'number') $('foodFatInput').value = Math.round(parsed.fatG);
+      const parsed = await res.json();
+      if (!res.ok) {
+        showStatus(parsed && parsed.error ? parsed.error : 'Estimate failed — enter values manually.', true);
+        return;
+      }
+      // Fill in whatever the estimate returned, and clear any field it
+      // DIDN'T return — otherwise a prior estimate's macro values could be
+      // left showing (and get logged) against a completely different meal.
+      $('foodCalInput').value     = typeof parsed.calories === 'number' ? parsed.calories : '';
+      $('foodProteinInput').value = typeof parsed.proteinG === 'number' ? parsed.proteinG : '';
+      $('foodCarbsInput').value   = typeof parsed.carbsG   === 'number' ? parsed.carbsG   : '';
+      $('foodFatInput').value     = typeof parsed.fatG     === 'number' ? parsed.fatG     : '';
       showStatus('Estimate filled in — review before logging.', false);
     } catch (e) {
       showStatus('Estimate failed — enter values manually.', true);

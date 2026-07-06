@@ -40,6 +40,19 @@
     let pushTimer = null;
     let suppressSync = false;
     let lastSyncedJson = null;
+    // The most recent full row we know the cloud holds — including keys
+    // owned by OTHER pages/configs that happen to share this appKey (e.g.
+    // health.html and po-water.html both sync under appKey 'health' but
+    // with different key lists). Pushes merge onto this instead of
+    // replacing the whole column, so this page can never wipe out another
+    // page's slice of the same row just because it doesn't have that data
+    // locally.
+    let lastKnownRemote = null;
+    // True once the initial cloud pull has resolved. Pushes are held back
+    // until then — otherwise a write that races ahead of the pull (e.g. a
+    // page that writes on boot without waiting for onReady) could push a
+    // partial/stale state before we even know what the cloud has.
+    let pullDone = false;
 
     function matches(k) {
       if (!k) return false;
@@ -103,17 +116,32 @@
       return changed;
     }
 
+    // Overlays this page's current local state onto the last-known remote
+    // row, instead of replacing the row outright. Keys this page doesn't
+    // manage (matches(k) === false) pass through untouched; keys it DOES
+    // manage but has since removed locally are deleted from the merged
+    // payload too, so local deletions still propagate.
+    function mergeForPush(state) {
+      const merged = Object.assign({}, lastKnownRemote || {});
+      for (const k of Object.keys(state)) merged[k] = state[k];
+      for (const k of Object.keys(merged)) {
+        if (matches(k) && !(k in state)) delete merged[k];
+      }
+      return merged;
+    }
+
     async function pushNow() {
-      if (!supa) return;
+      if (!supa || !pullDone) return;
       const state = collect();
       const json = JSON.stringify(state);
       if (json === lastSyncedJson) return;
+      const merged = mergeForPush(state);
       try {
         const { error } = await supa.from('app_state').upsert(
-          { key: appKey, data: state, updated_at: new Date().toISOString() },
+          { key: appKey, data: merged, updated_at: new Date().toISOString() },
           { onConflict: 'key' }
         );
-        if (!error) lastSyncedJson = json;
+        if (!error) { lastSyncedJson = json; lastKnownRemote = merged; }
       } catch (e) {}
     }
     function schedulePush() {
@@ -121,9 +149,11 @@
       pushTimer = setTimeout(pushNow, 250);
     }
     function flushOnUnload() {
+      if (!pullDone) return; // never had a stable base to merge onto — skip rather than risk a partial overwrite
       const state = collect();
       const json = JSON.stringify(state);
       if (json === lastSyncedJson) return;
+      const merged = mergeForPush(state);
       try {
         fetch(SUPABASE_URL + '/rest/v1/app_state?on_conflict=key', {
           method: 'POST',
@@ -133,10 +163,11 @@
             'Content-Type': 'application/json',
             'Prefer': 'resolution=merge-duplicates',
           },
-          body: JSON.stringify({ key: appKey, data: state, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ key: appKey, data: merged, updated_at: new Date().toISOString() }),
           keepalive: true,
         }).catch(() => {});
         lastSyncedJson = json;
+        lastKnownRemote = merged;
       } catch (e) {}
     }
 
@@ -147,12 +178,18 @@
           .from('app_state').select('data').eq('key', appKey).maybeSingle();
         if (!error && data && data.data && Object.keys(data.data).length > 0) {
           lastSyncedJson = JSON.stringify(data.data);
+          lastKnownRemote = data.data;
           applyRemote(data.data);
-        } else if (Object.keys(collect()).length > 0) {
-          schedulePush();
+        } else {
+          lastKnownRemote = {};
         }
-      } catch (e) {}
+      } catch (e) { lastKnownRemote = lastKnownRemote || {}; }
+      pullDone = true;
       callReady();
+      // Flush anything that changed locally while the pull was in flight
+      // (or the initial local state, if the cloud row was empty). No-ops
+      // cheaply via the lastSyncedJson check if nothing actually changed.
+      schedulePush();
       supa.channel('app_state_' + appKey)
         .on('postgres_changes', {
           event: '*',
@@ -164,6 +201,7 @@
           const incoming = JSON.stringify(payload.new.data);
           if (incoming === lastSyncedJson) return;
           lastSyncedJson = incoming;
+          lastKnownRemote = payload.new.data;
           applyRemote(payload.new.data);
         })
         .subscribe();

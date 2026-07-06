@@ -2605,6 +2605,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   // double-charge.
   // ============================================================
   function processAutoDeductSubs() {
+    // Don't touch balances/renewal dates on data that hasn't been reconciled
+    // with the cloud yet — on a device that's behind, this would compute a
+    // deduction from a stale snapshot and, if it landed before the pull,
+    // could double-charge the linked account. window.__financeSyncReady is
+    // set once the initial cloud pull (or its absence) is resolved.
+    if (!window.__financeSyncReady) return false;
     const items = storeGet('subs') || [];
     if (!items.length) return false;
     const now = new Date();
@@ -3377,18 +3383,40 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   safeRenderTicker();
   setInterval(safeRenderTicker, 1500);
 
+  // Cloud sync (see the separate <script> block below) lives outside this
+  // closure, so it can't call renderSubs/renderAllNetWorth/etc. directly —
+  // expose a single refresh entry point on window instead. Without this,
+  // a cloud pull would update localStorage but every section here would
+  // keep showing whatever was rendered at boot until a manual reload.
+  window.__financeRefresh = function () {
+    try { renderAllNetWorth(); } catch (e) { console.error('renderAllNetWorth failed', e); }
+    try { renderSubs(); } catch (e) { console.error('renderSubs failed', e); }
+    try { renderWishlist(); } catch (e) { console.error('renderWishlist failed', e); }
+    try { renderOrders(); } catch (e) { console.error('renderOrders failed', e); }
+    try { safeRenderTicker(); } catch (e) {}
+  };
+
 })();
 </script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  if (typeof initCloudSync !== 'function') return;
+  if (typeof initCloudSync !== 'function') {
+    // No cloud sync available (offline / not configured) — this is as
+    // "ready" as the data will ever get, so let auto-deduct proceed.
+    window.__financeSyncReady = true;
+    return;
+  }
   initCloudSync({
     appKey: 'finance',
     syncedKeys: ['subs', 'wishlist', 'incoming_orders', 'nw_currency', 'nw:activity', 'nw:history'],
     syncedPrefixes: ['nw:'],
+    onReady: function () {
+      window.__financeSyncReady = true;
+      if (window.__financeRefresh) window.__financeRefresh();
+    },
     onApplied: function () {
-      window.dispatchEvent(new Event('storage'));
+      if (window.__financeRefresh) window.__financeRefresh();
     }
   });
 });

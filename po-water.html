@@ -1094,6 +1094,29 @@ html, body {
 
   // BOOT
   renderAll();
+
+  // Cloud sync — called from inside this closure (not a separate <script>
+  // block) so onApplied can directly reload `state` from localStorage and
+  // re-render. A remote pull writes straight to localStorage, bypassing
+  // this page's in-memory `state` variable entirely — without this,
+  // `state` would stay stale, and the next local save (tapping "+", or
+  // any settings edit) would write that stale snapshot back over
+  // whatever another device just synced.
+  document.addEventListener('DOMContentLoaded', function () {
+    // When embedded in health.html, the parent owns sync for the 'health'
+    // row — running our own sync here would race and wipe sibling keys.
+    try { if (window.self !== window.top) return; } catch (e) { return; }
+    if (typeof initCloudSync !== 'function') return;
+    initCloudSync({
+      appKey: 'health',
+      syncedKeys: ['po_water_v1'],
+      onApplied: function () {
+        state = loadState();
+        renderSettings();
+        renderAll();
+      }
+    });
+  });
 })();
 </script>
 <style>
@@ -1116,22 +1139,6 @@ html, body {
   margin-bottom: max(0px, env(safe-area-inset-bottom));
 }
 </style>
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  // When embedded in health.html, the parent owns sync for the 'health'
-  // row — running our own sync here would race and wipe sibling keys.
-  try { if (window.self !== window.top) return; } catch (e) { return; }
-  if (typeof initCloudSync !== 'function') return;
-  initCloudSync({
-    appKey: 'health',
-    syncedKeys: ['po_water_v1'],
-    onApplied: function () {
-      window.dispatchEvent(new Event('storage'));
-    }
-  });
-});
-</script>
 
 </body>
 </html>

@@ -3656,6 +3656,16 @@ img, video, canvas, svg { max-width: 100%; }
   // JSON of the last state we sent or received — used to ignore
   // realtime echoes of our own pushes so we don't infinite-loop.
   let pcLastSyncedJson = null;
+  // Most recent full row we know the cloud holds. Pushes merge onto this
+  // instead of replacing the row outright, so a fresh device that only has
+  // (say) po_coach_cardio locally can't wipe the other synced keys from
+  // the cloud just because it doesn't have them yet.
+  let pcLastKnownRemote = null;
+  // True once the initial cloud pull has resolved. Pushes are held back
+  // until then so a write that races ahead of the pull (e.g. tapping a
+  // cardio pill within the first second on a fresh device) can't push a
+  // partial state before we know what the cloud already has.
+  let pcPullDone = false;
 
   const _pcOrigSet = localStorage.setItem.bind(localStorage);
   const _pcOrigRemove = localStorage.removeItem.bind(localStorage);
@@ -3768,19 +3778,32 @@ img, video, canvas, svg { max-width: 100%; }
     }
   }
 
+  // Overlays this page's current local state onto the last-known remote
+  // row instead of replacing the row outright, so a fresh device missing
+  // some of PC_SYNCED_KEYS locally can't delete them from the cloud.
+  function pcMergeForPush(state) {
+    const merged = Object.assign({}, pcLastKnownRemote || {});
+    for (const k of Object.keys(state)) merged[k] = state[k];
+    for (const k of PC_SYNCED_KEYS) {
+      if (!(k in state) && (k in merged)) delete merged[k];
+    }
+    return merged;
+  }
+
   async function pcPushNow() {
-    if (!pcSupa) return;
+    if (!pcSupa || !pcPullDone) return;
     const state = pcCollectState();
     const json = JSON.stringify(state);
     if (json === pcLastSyncedJson) return;
+    const merged = pcMergeForPush(state);
     try {
       const { error } = await pcSupa
         .from('app_state')
         .upsert(
-          { key: APP_KEY, data: state, updated_at: new Date().toISOString() },
+          { key: APP_KEY, data: merged, updated_at: new Date().toISOString() },
           { onConflict: 'key' }
         );
-      if (!error) pcLastSyncedJson = json;
+      if (!error) { pcLastSyncedJson = json; pcLastKnownRemote = merged; }
     } catch (_) {}
   }
 
@@ -3793,10 +3816,11 @@ img, video, canvas, svg { max-width: 100%; }
   // Backup push on unload via fetch keepalive so a fast refresh
   // doesn't lose the latest change before the debounced push fires.
   function pcFlushPushOnUnload() {
-    if (!pcSupa) return;
+    if (!pcSupa || !pcPullDone) return;
     const state = pcCollectState();
     const json = JSON.stringify(state);
     if (json === pcLastSyncedJson) return;
+    const merged = pcMergeForPush(state);
     try {
       fetch(SUPABASE_URL + '/rest/v1/app_state?on_conflict=key', {
         method: 'POST',
@@ -3806,10 +3830,11 @@ img, video, canvas, svg { max-width: 100%; }
           'Content-Type': 'application/json',
           'Prefer': 'resolution=merge-duplicates',
         },
-        body: JSON.stringify({ key: APP_KEY, data: state, updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ key: APP_KEY, data: merged, updated_at: new Date().toISOString() }),
         keepalive: true,
       }).catch(() => {});
       pcLastSyncedJson = json;
+      pcLastKnownRemote = merged;
     } catch (_) {}
   }
 
@@ -3825,11 +3850,16 @@ img, video, canvas, svg { max-width: 100%; }
         .from('app_state').select('data').eq('key', APP_KEY).maybeSingle();
       if (!error && data && data.data && Object.keys(data.data).length > 0) {
         pcLastSyncedJson = JSON.stringify(data.data);
+        pcLastKnownRemote = data.data;
         pcMaybeApplyRemote(data.data);
-      } else if (Object.keys(pcCollectState()).length > 0) {
-        pcSchedulePush();
+      } else {
+        pcLastKnownRemote = {};
       }
-    } catch (_) {}
+    } catch (_) { pcLastKnownRemote = pcLastKnownRemote || {}; }
+    pcPullDone = true;
+    // Flush anything that changed locally while the pull was in flight (or
+    // the initial local state, if the cloud row was empty/unreachable).
+    pcSchedulePush();
     pcSupa.channel('app_state_' + APP_KEY)
       .on('postgres_changes', {
         event: '*',
@@ -3841,6 +3871,7 @@ img, video, canvas, svg { max-width: 100%; }
         const incoming = JSON.stringify(payload.new.data);
         if (incoming === pcLastSyncedJson) return; // echo of our own push
         pcLastSyncedJson = incoming;
+        pcLastKnownRemote = payload.new.data;
         pcMaybeApplyRemote(payload.new.data);
       })
       .subscribe();

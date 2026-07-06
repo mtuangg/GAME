@@ -594,6 +594,24 @@ body::after {
     if (!t || !t.access) { window.location.href = 'health.html'; return; }
     $('whAction').textContent = 'Syncing…'; syncWhoop();
   });
+
+  // Cloud sync for the profile fields edited in "Your Data" above. Without
+  // this, a profile save here only ever lands in this device's localStorage
+  // — the next time health.html/po-water.html pull from the cloud on any
+  // device (including this one), they'd overwrite it with whatever the
+  // cloud already had, silently discarding the edit.
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof initCloudSync !== 'function') return;
+    initCloudSync({
+      appKey: 'health',
+      syncedKeys: [WATER_KEY],
+      onApplied: function () {
+        // If the settings modal is open, refresh its fields with whatever
+        // just arrived so a stale in-progress edit isn't shown.
+        if ($('settingsBg').classList.contains('show')) populate();
+      }
+    });
+  });
 })();
 </script>
 </body>

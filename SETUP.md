@@ -106,9 +106,24 @@ console.anthropic.com.
 
 ---
 
+## 5. Food AI Estimate — optional
+
+The **Food** page's "AI Estimate" button calls a server-side proxy (`api/food-estimate.js`)
+so the key is never shipped to the browser. In Vercel → **Settings → Environment Variables**, add:
+
+| Variable | Value |
+|---|---|
+| `ANTHROPIC_API_KEY` | your Anthropic API key (**secret**) |
+
+Redeploy. Leave it unset and the button just shows a clean "not configured" message — manual
+entry always works either way.
+
+---
+
 ## TL;DR
 1. Fork → import to Vercel → deploy.
 2. New Supabase → run the **SQL** above → paste your **URL + anon key** into `sync.js`,
    `topbar.js`, `gym.html`.
 3. (Optional) WHOOP: Client ID in `health.html` + the two env vars in Vercel.
-4. Change the password in `lock.js`. Done.
+4. (Optional) Food AI Estimate: `ANTHROPIC_API_KEY` env var in Vercel.
+5. Change the password in `lock.js`. Done.
