@@ -95,6 +95,9 @@
   filter: grayscale(100%) brightness(1.4);
   opacity: 0.85;
 }
+.topbar-timer-btn {
+  margin-right: auto; /* pushes this button to the far left; the rest stay grouped right */
+}
 
 /* Bottom tab bar — Instagram-style */
 .bottombar {
@@ -197,6 +200,9 @@ body.topbar-modal-open {
   // -------- HTML --------
   const topbarHtml = `
 <header class="topbar" id="topbar" role="navigation" aria-label="Quick actions">
+  <a href="timer.html" class="topbar-finance-btn topbar-timer-btn" id="topbarTimer" aria-label="Focus timer">
+    <span class="topbar-finance-icon">⏱️</span>
+  </a>
   <div class="topbar-water-wrap">
     <a href="health.html#water" class="topbar-water-pill" id="topbarWater" aria-label="Water progress">
       <span class="topbar-pill-dot"></span>

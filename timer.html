@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="lock.js"></script>
+<script src="/api/config"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>Focus Timer · Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="topbar.js" defer></script>
+
+<style>
+:root {
+  --text-primary: #FAFAFA;
+  --text-secondary: #B8B6B0;
+  --text-tertiary: #76746E;
+  --success: #6BE3A4;
+  --warning: #F2C063;
+  --danger:  #FF6B6B;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: #050506;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  min-height: 100vh; position: relative; overflow-x: hidden;
+  padding: max(28px, env(safe-area-inset-top)) 20px 60px;
+}
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(224, 118, 88, 0.16), transparent 45%),
+    radial-gradient(circle at 18% 90%, rgba(180, 180, 200, 0.06), transparent 50%);
+  filter: blur(40px); pointer-events: none; z-index: -2;
+  animation: drift 36s ease-in-out infinite alternate;
+}
+body::after {
+  content: ''; position: fixed; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,0.014) 1px, transparent 1px);
+  background-size: 3px 3px; pointer-events: none; z-index: -1;
+}
+@keyframes drift { 0% { transform: translate3d(0,0,0); } 100% { transform: translate3d(-22px, 14px, 0); } }
+
+.page { max-width: 1100px; margin: 0 auto; }
+.dash-title {
+  margin: 0 0 14px; font-size: 28px; font-weight: 700; letter-spacing: -0.025em;
+  background: linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+@media (max-width: 480px) { .dash-title { font-size: 22px; } }
+
+.section { margin-top: 8px; }
+.section-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-tertiary); display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.section-title::before { content: ''; width: 18px; height: 1px; background: var(--text-tertiary); opacity: 0.6; }
+.section-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0.08), transparent); }
+
+.gm-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px; padding: 20px; margin-bottom: 14px;
+  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.gm-card::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%);
+  opacity: 0.8;
+}
+
+.gm-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; position: relative; }
+.gm-header-left { display: flex; flex-direction: column; }
+.gm-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.gm-eyebrow .emoji { font-size: 13px; }
+
+.gm-streak {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-tertiary);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+  transition: background 0.25s, color 0.25s, border-color 0.25s;
+}
+.gm-streak-icon { font-size: 13px; }
+.gm-streak-num { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; }
+.gm-streak.gm-streak-active {
+  background: rgba(242,192,99,0.10); color: #F2C063; border-color: rgba(242,192,99,0.32);
+}
+.gm-streak.gm-streak-active .gm-streak-icon { filter: drop-shadow(0 0 6px rgba(242,192,99,0.6)); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.stat { background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 14px; }
+.stat-num { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; color: var(--text-primary); line-height: 1; }
+.stat-label { margin-top: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); }
+
+/* ===== Timer-specific ===== */
+.tmr-display-wrap { text-align: center; padding: 10px 0 18px; position: relative; }
+.tmr-time {
+  font-family: var(--font-mono); font-size: 56px; font-weight: 700;
+  letter-spacing: -0.02em; color: var(--text-primary); line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+@media (max-width: 480px) { .tmr-time { font-size: 44px; } }
+.tmr-note { margin-top: 8px; font-size: 12px; color: var(--text-tertiary); min-height: 16px; transition: color 0.2s; }
+.tmr-note.done { color: var(--success); font-weight: 600; }
+
+.tmr-bar {
+  height: 8px; border-radius: 999px; overflow: hidden;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 18px;
+}
+.tmr-bar-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, transparent), var(--accent));
+  border-radius: 999px;
+  transition: width 0.3s linear;
+}
+
+.tmr-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.tmr-btn {
+  flex: 1; min-width: 100px;
+  padding: 13px; border: 0; border-radius: 12px;
+  font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  cursor: pointer; transition: transform 0.1s, filter 0.15s, opacity 0.15s;
+}
+.tmr-btn:active { transform: translateY(1px); }
+.tmr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tmr-btn-start {
+  background: linear-gradient(180deg, #FFFFFF 0%, #E8E5DD 100%); color: #0A0A0B;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 8px 22px rgba(0,0,0,0.25);
+}
+.tmr-btn-start:hover:not(:disabled) { filter: brightness(1.06); }
+.tmr-btn-pause {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-primary);
+}
+.tmr-btn-pause:hover { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.tmr-btn-stop {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); color: var(--text-secondary);
+}
+.tmr-btn-stop:hover { background: rgba(255,107,107,0.10); border-color: rgba(255,107,107,0.32); color: #FF9B9B; }
+
+.tmr-settings {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06);
+}
+.tmr-field { flex: 1; min-width: 130px; }
+.tmr-field label {
+  display: block; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: 6px;
+}
+.tmr-field input {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+  background: rgba(0,0,0,0.28); color: var(--text-primary);
+  font-family: inherit; font-size: 14px; outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.tmr-field input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
+.tmr-field input:disabled { opacity: 0.4; }
+
+@media (max-width: 480px) {
+  body { padding: max(20px, env(safe-area-inset-top)) 14px 50px; }
+  .gm-card { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="dash-title">Focus</h1>
+
+  <div class="section">
+    <div class="section-title">Overview</div>
+    <div class="gm-card" style="--accent:#B8B6B0">
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-num" id="ovDeepStreak">0</div><div class="stat-label">Deep Work Streak</div></div>
+        <div class="stat"><div class="stat-num" id="ovStudyStreak">0</div><div class="stat-label">Study Streak</div></div>
+        <div class="stat"><div class="stat-num" id="ovDeepToday">0m</div><div class="stat-label">Deep Work Today</div></div>
+        <div class="stat"><div class="stat-num" id="ovStudyToday">0m</div><div class="stat-label">Study Today</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Deep Work</div>
+    <div class="gm-card" style="--accent:#A78BFA" id="deepCard">
+      <div class="gm-header">
+        <div class="gm-header-left">
+          <div class="gm-eyebrow"><span class="emoji">🧠</span>Deep Work Session</div>
+        </div>
+        <div class="gm-streak" id="deepStreak">
+          <span class="gm-streak-icon">🔥</span>
+          <span class="gm-streak-num" id="deepStreakNum">0</span>
+          <span>day streak</span>
+        </div>
+      </div>
+
+      <div class="tmr-display-wrap">
+        <div class="tmr-time" id="deepTime">50:00</div>
+        <div class="tmr-note" id="deepNote"></div>
+      </div>
+      <div class="tmr-bar"><div class="tmr-bar-fill" id="deepFill"></div></div>
+
+      <div class="tmr-controls">
+        <button class="tmr-btn tmr-btn-start" id="deepStart" type="button">Start</button>
+        <button class="tmr-btn tmr-btn-pause" id="deepPause" type="button" style="display:none">Pause</button>
+        <button class="tmr-btn tmr-btn-stop" id="deepStop" type="button" style="display:none">Stop</button>
+      </div>
+
+      <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat"><div class="stat-num" id="deepTodayMin">0</div><div class="stat-label">Minutes Today</div></div>
+      </div>
+
+      <div class="tmr-settings">
+        <div class="tmr-field">
+          <label for="deepTarget">Session length (min)</label>
+          <input type="number" id="deepTarget" min="1" max="240" inputmode="numeric">
+        </div>
+        <div class="tmr-field">
+          <label for="deepThreshold">Streak goal (min/day)</label>
+          <input type="number" id="deepThreshold" min="1" max="1440" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Study</div>
+    <div class="gm-card" style="--accent:#7DD3FC" id="studyCard">
+      <div class="gm-header">
+        <div class="gm-header-left">
+          <div class="gm-eyebrow"><span class="emoji">📚</span>Study Session</div>
+        </div>
+        <div class="gm-streak" id="studyStreak">
+          <span class="gm-streak-icon">🔥</span>
+          <span class="gm-streak-num" id="studyStreakNum">0</span>
+          <span>day streak</span>
+        </div>
+      </div>
+
+      <div class="tmr-display-wrap">
+        <div class="tmr-time" id="studyTime">25:00</div>
+        <div class="tmr-note" id="studyNote"></div>
+      </div>
+      <div class="tmr-bar"><div class="tmr-bar-fill" id="studyFill"></div></div>
+
+      <div class="tmr-controls">
+        <button class="tmr-btn tmr-btn-start" id="studyStart" type="button">Start</button>
+        <button class="tmr-btn tmr-btn-pause" id="studyPause" type="button" style="display:none">Pause</button>
+        <button class="tmr-btn tmr-btn-stop" id="studyStop" type="button" style="display:none">Stop</button>
+      </div>
+
+      <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat"><div class="stat-num" id="studyTodayMin">0</div><div class="stat-label">Minutes Today</div></div>
+      </div>
+
+      <div class="tmr-settings">
+        <div class="tmr-field">
+          <label for="studyTarget">Session length (min)</label>
+          <input type="number" id="studyTarget" min="1" max="240" inputmode="numeric">
+        </div>
+        <div class="tmr-field">
+          <label for="studyThreshold">Streak goal (min/day)</label>
+          <input type="number" id="studyThreshold" min="1" max="1440" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.page -->
+
+<script>
+(function () {
+  'use strict';
+
+  const STORE_KEY = 'timer_v1';
+  const TYPES = ['deep', 'study'];
+  const LABELS = { deep: 'Deep Work', study: 'Study' };
+  const $ = (id) => document.getElementById(id);
+
+  function defaultState() {
+    return {
+      settings: {
+        deep:  { targetMin: 50, thresholdMin: 20 },
+        study: { targetMin: 25, thresholdMin: 20 },
+      },
+      logs: {},   // { 'YYYY-MM-DD': { deep: seconds, study: seconds } }
+      active: null, // { type, targetSec, remainingSec, running, endsAt }
+    };
+  }
+
+  function normalize(s) {
+    if (!s || typeof s !== 'object') return defaultState();
+    s.settings = s.settings || {};
+    s.settings.deep  = Object.assign({ targetMin: 50, thresholdMin: 20 }, s.settings.deep);
+    s.settings.study = Object.assign({ targetMin: 25, thresholdMin: 20 }, s.settings.study);
+    s.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};
+    if (s.active && typeof s.active !== 'object') s.active = null;
+    return s;
+  }
+
+  function load() {
+    try { return normalize(JSON.parse(localStorage.getItem(STORE_KEY))); }
+    catch (e) { return defaultState(); }
+  }
+  function save(state) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+  function calendarDateKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function dayTotalSec(state, type, dateKey) {
+    const d = state.logs[dateKey];
+    return d ? (d[type] || 0) : 0;
+  }
+
+  // Consecutive calendar days meeting that day's minute threshold, walking
+  // back from today (or yesterday if today hasn't hit the goal yet) — same
+  // idea as the other trackers' day streaks: one missed day resets it.
+  function computeStreak(state, type) {
+    const thresholdSec = Math.max(1, state.settings[type].thresholdMin || 1) * 60;
+    let streak = 0;
+    const cursor = new Date();
+    if (dayTotalSec(state, type, calendarDateKey(cursor)) < thresholdSec) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    while (dayTotalSec(state, type, calendarDateKey(cursor)) >= thresholdSec) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function addSeconds(state, type, seconds) {
+    if (seconds <= 0) return;
+    const k = calendarDateKey();
+    state.logs[k] = state.logs[k] || { deep: 0, study: 0 };
+    state.logs[k][type] = (state.logs[k][type] || 0) + seconds;
+  }
+
+  function fmt(totalSec) {
+    totalSec = Math.max(0, Math.round(totalSec));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  /* ---------- session control ---------- */
+  function startSession(type) {
+    const st = load();
+    if (st.active) return; // one session at a time
+    const targetSec = Math.max(60, (st.settings[type].targetMin || 25) * 60);
+    st.active = { type: type, targetSec: targetSec, remainingSec: targetSec, running: true, endsAt: Date.now() + targetSec * 1000 };
+    save(st);
+    renderAll(st);
+  }
+
+  function togglePause(type) {
+    const st = load();
+    if (!st.active || st.active.type !== type) return;
+    if (st.active.running) {
+      st.active.remainingSec = Math.max(0, Math.round((st.active.endsAt - Date.now()) / 1000));
+      st.active.running = false;
+    } else {
+      st.active.endsAt = Date.now() + st.active.remainingSec * 1000;
+      st.active.running = true;
+    }
+    save(st);
+    renderAll(st);
+  }
+
+  function stopSession(type) {
+    const st = load();
+    if (!st.active || st.active.type !== type) return;
+    const a = st.active;
+    const remaining = a.running ? Math.max(0, Math.round((a.endsAt - Date.now()) / 1000)) : a.remainingSec;
+    const elapsed = Math.max(0, a.targetSec - remaining);
+    addSeconds(st, type, elapsed);
+    st.active = null;
+    save(st);
+    renderAll(st);
+    if (elapsed > 0) showNote(type, 'Logged ' + Math.round(elapsed / 60) + ' min.', false);
+  }
+
+  function completeNaturally(state) {
+    const a = state.active;
+    addSeconds(state, a.type, a.targetSec);
+    state.active = null;
+    save(state);
+    beep();
+    showNote(a.type, '✅ Session complete — logged ' + Math.round(a.targetSec / 60) + ' min.', true);
+    renderAll(state);
+  }
+
+  const noteTimers = { deep: null, study: null };
+  function showNote(type, text, done) {
+    const el = $(type + 'Note');
+    el.textContent = text;
+    el.classList.toggle('done', !!done);
+    clearTimeout(noteTimers[type]);
+    noteTimers[type] = setTimeout(() => { el.textContent = ''; el.classList.remove('done'); }, 5000);
+  }
+
+  /* ---------- sound ---------- */
+  function beep() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      [880, 660].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        g.gain.value = 0.0001;
+        o.connect(g); g.connect(ctx.destination);
+        const t0 = ctx.currentTime + i * 0.22;
+        o.start(t0);
+        g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+        o.stop(t0 + 0.35);
+      });
+      setTimeout(() => { try { ctx.close(); } catch (e) {} }, 900);
+    } catch (e) {}
+  }
+
+  /* ---------- settings ---------- */
+  function saveSettings(type) {
+    const st = load();
+    if (st.active && st.active.type === type) return; // locked while running
+    const t = parseInt($(type + 'Target').value, 10);
+    const th = parseInt($(type + 'Threshold').value, 10);
+    if (t > 0) st.settings[type].targetMin = t;
+    if (th > 0) st.settings[type].thresholdMin = th;
+    save(st);
+    renderAll(st);
+  }
+
+  /* ---------- render ---------- */
+  function renderCard(type, st) {
+    const cfg = st.settings[type];
+    const active = (st.active && st.active.type === type) ? st.active : null;
+    const otherActive = (st.active && st.active.type !== type) ? st.active.type : null;
+
+    let targetSec, remaining;
+    if (active) {
+      targetSec = active.targetSec;
+      remaining = active.running ? Math.max(0, Math.round((active.endsAt - Date.now()) / 1000)) : active.remainingSec;
+    } else {
+      targetSec = Math.max(60, (cfg.targetMin || 25) * 60);
+      remaining = targetSec;
+    }
+
+    $(type + 'Time').textContent = fmt(remaining);
+    const pct = targetSec > 0 ? Math.min(100, Math.max(0, 100 * (1 - remaining / targetSec))) : 0;
+    $(type + 'Fill').style.width = pct + '%';
+
+    const startBtn = $(type + 'Start'), pauseBtn = $(type + 'Pause'), stopBtn = $(type + 'Stop');
+    if (active) {
+      startBtn.style.display = 'none';
+      pauseBtn.style.display = ''; pauseBtn.disabled = false;
+      stopBtn.style.display = ''; stopBtn.disabled = false;
+      pauseBtn.textContent = active.running ? 'Pause' : 'Resume';
+    } else {
+      startBtn.style.display = '';
+      startBtn.disabled = !!otherActive;
+      pauseBtn.style.display = 'none';
+      stopBtn.style.display = 'none';
+      if (otherActive && !$(type + 'Note').textContent) {
+        $(type + 'Note').textContent = LABELS[otherActive] + ' session running…';
+      } else if (!otherActive && $(type + 'Note').textContent.indexOf('running') !== -1) {
+        $(type + 'Note').textContent = '';
+      }
+    }
+
+    const todaySec = dayTotalSec(st, type, calendarDateKey());
+    $(type + 'TodayMin').textContent = Math.round(todaySec / 60);
+
+    const streak = computeStreak(st, type);
+    $(type + 'StreakNum').textContent = streak;
+    $(type + 'Streak').classList.toggle('gm-streak-active', streak > 0);
+
+    const targetInput = $(type + 'Target'), thresholdInput = $(type + 'Threshold');
+    if (document.activeElement !== targetInput) targetInput.value = cfg.targetMin;
+    if (document.activeElement !== thresholdInput) thresholdInput.value = cfg.thresholdMin;
+    targetInput.disabled = !!active;
+    thresholdInput.disabled = !!active;
+  }
+
+  function renderOverview(st) {
+    $('ovDeepStreak').textContent = computeStreak(st, 'deep');
+    $('ovStudyStreak').textContent = computeStreak(st, 'study');
+    $('ovDeepToday').textContent = Math.round(dayTotalSec(st, 'deep', calendarDateKey()) / 60) + 'm';
+    $('ovStudyToday').textContent = Math.round(dayTotalSec(st, 'study', calendarDateKey()) / 60) + 'm';
+  }
+
+  function renderAll(stArg) {
+    const st = stArg || load();
+    TYPES.forEach((t) => renderCard(t, st));
+    renderOverview(st);
+  }
+
+  /* ---------- tick ---------- */
+  function tick() {
+    const st = load();
+    if (st.active && st.active.running) {
+      const remaining = Math.max(0, Math.round((st.active.endsAt - Date.now()) / 1000));
+      if (remaining <= 0) { completeNaturally(st); return; }
+    }
+    renderAll(st);
+  }
+
+  /* ---------- wire up ---------- */
+  TYPES.forEach((type) => {
+    $(type + 'Start').addEventListener('click', () => startSession(type));
+    $(type + 'Pause').addEventListener('click', () => togglePause(type));
+    $(type + 'Stop').addEventListener('click', () => stopSession(type));
+    $(type + 'Target').addEventListener('blur', () => saveSettings(type));
+    $(type + 'Threshold').addEventListener('blur', () => saveSettings(type));
+    [$(type + 'Target'), $(type + 'Threshold')].forEach((el) => {
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
+    });
+  });
+
+  renderAll();
+  setInterval(tick, 250);
+
+  window.addEventListener('storage', () => renderAll());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderAll(); });
+
+  if (window.initCloudSync) {
+    window.initCloudSync({
+      appKey: 'timer',
+      syncedKeys: [STORE_KEY],
+      onApplied: () => renderAll(),
+    });
+  }
+})();
+</script>
+</body>
+</html>
