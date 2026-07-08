@@ -178,6 +178,45 @@ body::after {
 .tmr-field input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
 .tmr-field input:disabled { opacity: 0.4; }
 
+.tmr-plan {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.tmr-plan-title {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: 10px;
+}
+.tmr-plan-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin-bottom: 8px;
+}
+.tmr-plan-row:last-child { margin-bottom: 0; }
+.tmr-plan-day {
+  flex-shrink: 0; width: 40px; padding-top: 9px;
+  display: flex; flex-direction: column; align-items: center;
+  font-family: var(--font-mono);
+}
+.tmr-plan-dow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.tmr-plan-date {
+  font-size: 10px; color: var(--text-tertiary); margin-top: 1px;
+}
+.tmr-plan-row-today .tmr-plan-dow,
+.tmr-plan-row-today .tmr-plan-date { color: var(--accent); }
+.tmr-plan-input {
+  flex: 1; min-width: 0; width: 100%;
+  padding: 8px 12px; resize: vertical;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+  background: rgba(0,0,0,0.28); color: var(--text-primary);
+  font-family: inherit; font-size: 13px; line-height: 1.4; outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.tmr-plan-input::placeholder { color: var(--text-tertiary); }
+.tmr-plan-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
+.tmr-plan-row-today .tmr-plan-input { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
 @media (max-width: 480px) {
   body { padding: max(20px, env(safe-area-inset-top)) 14px 50px; }
   .gm-card { padding: 16px; }
@@ -241,6 +280,38 @@ body::after {
           <input type="number" id="deepThreshold" min="1" max="1440" inputmode="numeric">
         </div>
       </div>
+
+      <div class="tmr-plan">
+        <div class="tmr-plan-title">This Week's Plan</div>
+        <div class="tmr-plan-row" id="deepPlanRow0">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Mon</span><span class="tmr-plan-date" id="deepPlanDate0"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan0" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow1">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Tue</span><span class="tmr-plan-date" id="deepPlanDate1"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan1" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow2">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Wed</span><span class="tmr-plan-date" id="deepPlanDate2"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan2" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow3">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Thu</span><span class="tmr-plan-date" id="deepPlanDate3"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan3" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow4">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Fri</span><span class="tmr-plan-date" id="deepPlanDate4"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan4" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow5">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Sat</span><span class="tmr-plan-date" id="deepPlanDate5"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan5" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="deepPlanRow6">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Sun</span><span class="tmr-plan-date" id="deepPlanDate6"></span></div>
+          <textarea class="tmr-plan-input" id="deepPlan6" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -284,6 +355,38 @@ body::after {
           <input type="number" id="studyThreshold" min="1" max="1440" inputmode="numeric">
         </div>
       </div>
+
+      <div class="tmr-plan">
+        <div class="tmr-plan-title">This Week's Plan</div>
+        <div class="tmr-plan-row" id="studyPlanRow0">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Mon</span><span class="tmr-plan-date" id="studyPlanDate0"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan0" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow1">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Tue</span><span class="tmr-plan-date" id="studyPlanDate1"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan1" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow2">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Wed</span><span class="tmr-plan-date" id="studyPlanDate2"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan2" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow3">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Thu</span><span class="tmr-plan-date" id="studyPlanDate3"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan3" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow4">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Fri</span><span class="tmr-plan-date" id="studyPlanDate4"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan4" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow5">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Sat</span><span class="tmr-plan-date" id="studyPlanDate5"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan5" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+        <div class="tmr-plan-row" id="studyPlanRow6">
+          <div class="tmr-plan-day"><span class="tmr-plan-dow">Sun</span><span class="tmr-plan-date" id="studyPlanDate6"></span></div>
+          <textarea class="tmr-plan-input" id="studyPlan6" rows="2" placeholder="What are you working on?"></textarea>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -305,6 +408,7 @@ body::after {
         study: { targetMin: 25, thresholdMin: 20 },
       },
       logs: {},   // { 'YYYY-MM-DD': { deep: seconds, study: seconds } }
+      plans: { deep: {}, study: {} }, // { type: { 'YYYY-MM-DD': 'free text plan' } }
       active: null, // { type, targetSec, remainingSec, running, endsAt }
     };
   }
@@ -315,6 +419,9 @@ body::after {
     s.settings.deep  = Object.assign({ targetMin: 50, thresholdMin: 20 }, s.settings.deep);
     s.settings.study = Object.assign({ targetMin: 25, thresholdMin: 20 }, s.settings.study);
     s.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};
+    s.plans = (s.plans && typeof s.plans === 'object') ? s.plans : {};
+    s.plans.deep  = (s.plans.deep  && typeof s.plans.deep  === 'object') ? s.plans.deep  : {};
+    s.plans.study = (s.plans.study && typeof s.plans.study === 'object') ? s.plans.study : {};
     if (s.active && typeof s.active !== 'object') s.active = null;
     return s;
   }
@@ -328,6 +435,29 @@ body::after {
   function calendarDateKey(d) {
     d = d || new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // The 7 dates (Mon->Sun) of the calendar week containing `ref` (defaults
+  // to today) — same Monday-start math as gym.html's cardio weekly plan.
+  function weekDates(ref) {
+    ref = ref || new Date();
+    const dow = ref.getDay(); // 0=Sun..6=Sat
+    const diffToMonday = (dow + 6) % 7;
+    const monday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - diffToMonday);
+    const out = [];
+    for (let i = 0; i < 7; i++) out.push(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
+    return out;
+  }
+
+  function getPlanText(state, type, dateKey) {
+    return (state.plans[type] && state.plans[type][dateKey]) || '';
+  }
+  function setPlanText(type, dateKey, text) {
+    const st = load();
+    const trimmed = (text || '').trim();
+    if (trimmed) st.plans[type][dateKey] = trimmed;
+    else delete st.plans[type][dateKey];
+    save(st);
   }
 
   function dayTotalSec(state, type, dateKey) {
@@ -504,6 +634,27 @@ body::after {
     if (document.activeElement !== thresholdInput) thresholdInput.value = cfg.thresholdMin;
     targetInput.disabled = !!active;
     thresholdInput.disabled = !!active;
+
+    renderPlanRows(type, st);
+  }
+
+  // Fills in this week's 7 static plan rows (date labels, saved text, and
+  // which row is "today"). Guards each textarea with the same
+  // activeElement check used for the settings inputs above, so the 250ms
+  // tick loop can never wipe out text the user is actively typing.
+  function renderPlanRows(type, st) {
+    const dates = weekDates();
+    const todayKey = calendarDateKey();
+    for (let i = 0; i < 7; i++) {
+      const d = dates[i];
+      const dateKey = calendarDateKey(d);
+      const row = $(type + 'PlanRow' + i);
+      row.classList.toggle('tmr-plan-row-today', dateKey === todayKey);
+      $(type + 'PlanDate' + i).textContent = (d.getMonth() + 1) + '/' + d.getDate();
+      const textarea = $(type + 'Plan' + i);
+      textarea.dataset.dateKey = dateKey;
+      if (document.activeElement !== textarea) textarea.value = getPlanText(st, type, dateKey);
+    }
   }
 
   function renderOverview(st) {
@@ -539,6 +690,10 @@ body::after {
     [$(type + 'Target'), $(type + 'Threshold')].forEach((el) => {
       el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
     });
+    for (let i = 0; i < 7; i++) {
+      const textarea = $(type + 'Plan' + i);
+      textarea.addEventListener('blur', () => setPlanText(type, textarea.dataset.dateKey, textarea.value));
+    }
   });
 
   renderAll();
