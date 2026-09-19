@@ -404,8 +404,8 @@ body::after {
   function defaultState() {
     return {
       settings: {
-        deep:  { targetMin: 50, thresholdMin: 20 },
-        study: { targetMin: 25, thresholdMin: 20 },
+        deep:  { targetMin: 50, thresholdMin: 60 },
+        study: { targetMin: 25, thresholdMin: 60 },
       },
       logs: {},   // { 'YYYY-MM-DD': { deep: seconds, study: seconds } }
       plans: { deep: {}, study: {} }, // { type: { 'YYYY-MM-DD': 'free text plan' } }
@@ -416,8 +416,8 @@ body::after {
   function normalize(s) {
     if (!s || typeof s !== 'object') return defaultState();
     s.settings = s.settings || {};
-    s.settings.deep  = Object.assign({ targetMin: 50, thresholdMin: 20 }, s.settings.deep);
-    s.settings.study = Object.assign({ targetMin: 25, thresholdMin: 20 }, s.settings.study);
+    s.settings.deep  = Object.assign({ targetMin: 50, thresholdMin: 60 }, s.settings.deep);
+    s.settings.study = Object.assign({ targetMin: 25, thresholdMin: 60 }, s.settings.study);
     s.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};
     s.plans = (s.plans && typeof s.plans === 'object') ? s.plans : {};
     s.plans.deep  = (s.plans.deep  && typeof s.plans.deep  === 'object') ? s.plans.deep  : {};
@@ -426,11 +426,56 @@ body::after {
     return s;
   }
 
-  function load() {
-    try { return normalize(JSON.parse(localStorage.getItem(STORE_KEY))); }
-    catch (e) { return defaultState(); }
+  // ---- local-only safety net for logged minutes -----------------------
+  // BACKUP_KEY is deliberately NOT in the cloud-sync'd key list. It's a
+  // one-way ratchet, on this device only, of the most minutes ever seen
+  // logged for each day/type. If a cloud pull ever applies a stale/older
+  // snapshot on top of localStorage (a dropped realtime connection, a
+  // second tab/device pushing behind, a push that never finished before
+  // the page closed, etc.), this restores each day back up to at least
+  // what this device already knows — so a streak can't be silently wiped
+  // by a sync race, even though we can't always prevent the race itself.
+  const BACKUP_KEY = 'timer_v1_backup';
+  function loadBackup() {
+    try { return JSON.parse(localStorage.getItem(BACKUP_KEY)) || {}; } catch (e) { return {}; }
   }
-  function save(state) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  function trackLogsInBackup(logs) {
+    const backup = loadBackup();
+    let changed = false;
+    for (const dateKey in logs) {
+      const cur = logs[dateKey] || {};
+      const bak = backup[dateKey] || { deep: 0, study: 0 };
+      TYPES.forEach((t) => {
+        if ((cur[t] || 0) > (bak[t] || 0)) { bak[t] = cur[t]; changed = true; }
+      });
+      backup[dateKey] = bak;
+    }
+    if (changed) { try { localStorage.setItem(BACKUP_KEY, JSON.stringify(backup)); } catch (e) {} }
+  }
+  function healLogsFromBackup(logs) {
+    const backup = loadBackup();
+    let changed = false;
+    for (const dateKey in backup) {
+      logs[dateKey] = logs[dateKey] || { deep: 0, study: 0 };
+      const bak = backup[dateKey];
+      TYPES.forEach((t) => {
+        if ((bak[t] || 0) > (logs[dateKey][t] || 0)) { logs[dateKey][t] = bak[t]; changed = true; }
+      });
+    }
+    return changed;
+  }
+
+  function load() {
+    let st;
+    try { st = normalize(JSON.parse(localStorage.getItem(STORE_KEY))); }
+    catch (e) { st = defaultState(); }
+    if (healLogsFromBackup(st.logs)) save(st);
+    return st;
+  }
+  function save(state) {
+    trackLogsInBackup(state.logs);
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  }
 
   function calendarDateKey(d) {
     d = d || new Date();
@@ -641,7 +686,13 @@ body::after {
   // Fills in this week's 7 static plan rows (date labels, saved text, and
   // which row is "today"). Guards each textarea with the same
   // activeElement check used for the settings inputs above, so the 250ms
-  // tick loop can never wipe out text the user is actively typing.
+  // tick loop can never wipe out text the user is actively typing — and,
+  // importantly, so it can't silently reassign a FOCUSED box to a
+  // different date either. Without freezing dataset.dateKey while
+  // focused, a box being typed into right as the calendar rolls into a
+  // new week (e.g. midnight Sun->Mon) would get retargeted to next
+  // week's date underneath the user, saving their text under the wrong
+  // day the moment they blur.
   function renderPlanRows(type, st) {
     const dates = weekDates();
     const todayKey = calendarDateKey();
@@ -652,8 +703,10 @@ body::after {
       row.classList.toggle('tmr-plan-row-today', dateKey === todayKey);
       $(type + 'PlanDate' + i).textContent = (d.getMonth() + 1) + '/' + d.getDate();
       const textarea = $(type + 'Plan' + i);
-      textarea.dataset.dateKey = dateKey;
-      if (document.activeElement !== textarea) textarea.value = getPlanText(st, type, dateKey);
+      if (document.activeElement !== textarea) {
+        textarea.dataset.dateKey = dateKey;
+        textarea.value = getPlanText(st, type, dateKey);
+      }
     }
   }
 
@@ -681,6 +734,7 @@ body::after {
   }
 
   /* ---------- wire up ---------- */
+  const planSaveTimers = {};
   TYPES.forEach((type) => {
     $(type + 'Start').addEventListener('click', () => startSession(type));
     $(type + 'Pause').addEventListener('click', () => togglePause(type));
@@ -692,7 +746,16 @@ body::after {
     });
     for (let i = 0; i < 7; i++) {
       const textarea = $(type + 'Plan' + i);
-      textarea.addEventListener('blur', () => setPlanText(type, textarea.dataset.dateKey, textarea.value));
+      const doSave = () => setPlanText(type, textarea.dataset.dateKey, textarea.value);
+      // Blur saves immediately. Input ALSO saves after a short pause —
+      // relying on blur alone risks losing what was typed if the tab gets
+      // suspended or killed (e.g. switching apps on a phone) before the
+      // user taps away from the box.
+      textarea.addEventListener('blur', () => { clearTimeout(planSaveTimers[textarea.id]); doSave(); });
+      textarea.addEventListener('input', () => {
+        clearTimeout(planSaveTimers[textarea.id]);
+        planSaveTimers[textarea.id] = setTimeout(doSave, 800);
+      });
     }
   });
 
